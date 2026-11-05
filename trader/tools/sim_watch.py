@@ -1,5 +1,5 @@
 """Watch one simulated position each minute; exit with the result when the stop, the target or the
-flat-by time is hit. Usage: sim_watch.py SYMBOL short|long ENTRY STOP TARGET NOTIONAL FLAT_BY"""
+flat-by time is hit. Usage: sim_watch.py SYMBOL short|long ENTRY STOP TARGET NOTIONAL FLAT_BY [OPENED_EPOCH]"""
 import importlib.util, sys, time, datetime
 REPO = "/home/user/skills-introduction-to-github"
 spec = importlib.util.spec_from_file_location("scan", REPO + "/.claude/skills/trader-scanner/scan.py")
@@ -7,6 +7,8 @@ scan = importlib.util.module_from_spec(spec); spec.loader.exec_module(scan)
 sym, side = sys.argv[1], sys.argv[2]
 entry, stop, target, notional = map(float, sys.argv[3:7])
 flat_by = sys.argv[7]
+# Optional 8th argument: the epoch second the position opened, so bars since then count.
+opened = float(sys.argv[8]) if len(sys.argv) > 8 else None
 shares = notional / entry
 sign = -1 if side == "short" else 1
 
@@ -15,7 +17,7 @@ def pnl(px):
     return sign * (px - entry) * shares
 
 
-start = datetime.datetime.now(datetime.timezone.utc).timestamp()
+start = opened or datetime.datetime.now(datetime.timezone.utc).timestamp()
 while True:
     now = scan.to_eastern(datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     try:
