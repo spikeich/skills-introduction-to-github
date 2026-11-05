@@ -90,7 +90,11 @@
     "target": 115.35,
     "target_r": 3,
     "flat_by": "15:55",
-    "status": "open"
+    "status": "closed",
+    "closed": "2026-11-05 13:10 ET",
+    "exit": 119.27,
+    "exit_reason": "stop",
+    "pnl_usd": -3.92
   },
   {
     "id": 7,
