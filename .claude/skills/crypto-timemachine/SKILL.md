@@ -35,8 +35,8 @@ python3 "${CLAUDE_SKILL_DIR}/timemachine.py" run --symbol XRP --side sell \
     --entry 1.3008 --stop 1.3076 --target 1.294 --entry-time 14:15 --or-minutes 30
 ```
 
-Otras opciones: `--date YYYY-MM-DD` (por defecto hoy, UTC), `--window-utc
-13:30-20:00`, `--until 18:00`, `--replays N`, `--seed N` (por defecto 19),
+Otras opciones: `--date YYYY-MM-DD` (por defecto hoy, UTC), `--session`
+(ver abajo), `--until 18:00`, `--replays N`, `--seed N` (por defecto 19),
 `--window N` (por defecto 2 velas), `--write`, `--json`, `--offline ARCHIVO`,
 `--now "2026-11-05 14:00"`.
 
@@ -48,14 +48,33 @@ entorno.
 | | Acciones (original) | Cripto (esta) |
 | --- | --- | --- |
 | Símbolo | TSLA | `ETH`, `ETH-USD` o `ETHUSDT`: todos se leen como `ETH-USD` en Yahoo |
-| Sesión | 9:30 a 16:00 de Nueva York, lunes a viernes | una ventana diaria en **UTC**, todos los días. Por defecto **13:30-20:00 UTC** (10:30-17:00 en Argentina), cuando abre Wall Street y cripto mueve más volumen |
+| Sesión | 9:30 a 16:00 de Nueva York, lunes a viernes | una ventana atada al horario de una bolsa, **todos los días** (ver la tabla de sesiones) |
 | Horas | Nueva York, AM/PM | **UTC, reloj de 24 horas**. `--entry-time 14:00` es la vela que **cierra** a las 14:00 |
 | Redondeo | al centavo | al "tick" de cada cripto, ~1/10.000 del precio (0,0001 en XRP, 0,1 en ETH) |
 | Medio día de bolsa | se saltea | no existe; solo se saltean días con datos incompletos |
 
-La ventana se elige con `--window-utc`. Para la apertura de Asia, por
-ejemplo, `--window-utc 00:00-06:00`. Tiene que estar dentro de un mismo día
-UTC y durar al menos una hora.
+## Sesiones
+
+Se elige con `--session`. Cripto mueve más volumen cuando abren las bolsas de
+Europa y de Wall Street, así que las sesiones siguen esos horarios:
+
+| `--session` | Hora local | En UTC (invierno del norte) | En Argentina |
+| --- | --- | --- | --- |
+| `europa-wallstreet` (por defecto) | 08:00 Londres a 16:00 Nueva York | 08:00-21:00 | 05:00-18:00 |
+| `europa` | 08:00 a 16:30 Londres | 08:00-16:30 | 05:00-13:30 |
+| `wallstreet` | 09:30 a 16:00 Nueva York | 14:30-21:00 | 11:30-18:00 |
+| `utc` + `--window-utc 00:00-06:00` | la ventana fija que elijas | | |
+
+Londres y Nueva York cambian al horario de verano en fechas distintas
+(Europa: último domingo de marzo y de octubre; EE.UU.: segundo domingo de
+marzo y primer domingo de noviembre). El script calcula la ventana de **cada
+día** con sus propios horarios: en verano todo se corre una hora antes en
+UTC. En las semanas en que solo cambió uno de los dos, `europa-wallstreet`
+termina una hora antes o después del cierre de Nueva York.
+
+El rango de apertura (`--or-minutes`, por defecto 15) se cuenta desde el
+inicio de la sesión: con `europa` o `europa-wallstreet` es la apertura de
+Londres, con `wallstreet` la de Nueva York. `--entry-time` va siempre en UTC.
 
 ## Cómo funciona
 

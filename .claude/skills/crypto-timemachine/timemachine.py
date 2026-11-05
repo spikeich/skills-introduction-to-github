@@ -3,9 +3,13 @@
 
 Crypto port of trader-timemachine from Jakeschincariol/day-trader-skill (MIT,
 see LICENSE-day-trader-skill). Crypto never closes, so a "session" here is a
-daily UTC window you choose with --window-utc, default 13:30-20:00 (the US
-stock market hours, when crypto trades most volume). Every day of the week
-counts. Symbols are Yahoo crypto pairs: BTC-USD, ETH-USD, SOL-USD ... (a bare
+daily window tied to a stock market's hours, every day of the week:
+  --session europa-wallstreet   08:00 London to 16:00 New York (default)
+  --session europa              08:00 to 16:30 London
+  --session wallstreet          09:30 to 16:00 New York
+  --session utc --window-utc HH:MM-HH:MM   a fixed UTC window
+London and New York switch daylight time on different dates, so each day's
+window is worked out from that day's own offsets (UTC in the output). Symbols are Yahoo crypto pairs: BTC-USD, ETH-USD, SOL-USD ... (a bare
 BTC becomes BTC-USD). All times are UTC, 24-hour clock.
 
 Replays a planned day trade before you risk a dollar: 10,000 simulated runs of
@@ -90,9 +94,17 @@ PAUSE = 0.5          # seconds between requests: be polite to free endpoints
 BACKOFF = 5.0        # seconds to wait once after a 429
 HOSTS = ("query2", "query1")
 INTERVAL = 300       # 5-minute bars, in seconds
-OPEN_MIN = 13 * 60 + 30   # default session window, UTC; set_window() changes these
-CLOSE_MIN = 20 * 60
-SESSION_BARS = (CLOSE_MIN - OPEN_MIN) // 5
+# name: (anchor market, local open in minutes, length in minutes)
+SESSIONS = {
+    "europa-wallstreet": ("london", 8 * 60, 13 * 60),   # London open to the New York close
+    "europa": ("london", 8 * 60, 8 * 60 + 30),
+    "wallstreet": ("ny", 9 * 60 + 30, 6 * 60 + 30),
+}
+SESSION = SESSIONS["europa-wallstreet"]   # set_session() changes it
+SESSION_NAME = "europa-wallstreet"
+SESSION_BARS = SESSION[2] // 5
+OPEN_MIN = 8 * 60                         # the plan day's open and close in UTC: set_plan_day()
+CLOSE_MIN = OPEN_MIN + SESSION[2]
 MIN_SESSIONS = 20
 SAMPLE_PATHS = 160
 BAND_PATHS = 2000
@@ -105,9 +117,60 @@ EPOCH = datetime.datetime(1970, 1, 1)
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
-def set_window(text):
-    """'13:30-20:00' (UTC) -> sets OPEN_MIN, CLOSE_MIN, SESSION_BARS."""
-    global OPEN_MIN, CLOSE_MIN, SESSION_BARS
+def set_session(name, window_utc=None):
+    """Pick the session: a named market window, or 'utc' with --window-utc."""
+    global SESSION, SESSION_BARS, SESSION_NAME
+    if name == "utc":
+        a, b = parse_window(window_utc)
+        SESSION = ("utc", a, b - a)
+    elif name in SESSIONS:
+        SESSION = SESSIONS[name]
+    else:
+        raise TMError("--session must be one of %s or utc" % ", ".join(SESSIONS))
+    SESSION_NAME = name
+    SESSION_BARS = SESSION[2] // 5
+    set_plan_day(datetime.datetime.now(datetime.timezone.utc).date())
+
+
+def _nth_sunday(year, month, n):
+    d = datetime.date(year, month, 1)
+    d += datetime.timedelta(days=(6 - d.weekday()) % 7)
+    return d + datetime.timedelta(weeks=n - 1)
+
+
+def _last_sunday(year, month):
+    d = datetime.date(year, month + 1, 1) - datetime.timedelta(days=1)
+    return d - datetime.timedelta(days=(d.weekday() + 1) % 7)
+
+
+def utc_offset_hours(market, day):
+    """Hours from UTC at the market's open on that day. New York: -4 from the
+    second Sunday of March to the first Sunday of November, else -5 (US rule
+    since 2007). London: +1 from the last Sunday of March to the last Sunday of
+    October, else 0 (EU rule). UTC: 0."""
+    if market == "ny":
+        return -4 if _nth_sunday(day.year, 3, 2) <= day < _nth_sunday(day.year, 11, 1) else -5
+    if market == "london":
+        return 1 if _last_sunday(day.year, 3) <= day < _last_sunday(day.year, 10) else 0
+    return 0
+
+
+def open_utc(day):
+    """The session's open on that day, in minutes after UTC midnight."""
+    if isinstance(day, str):
+        day = datetime.date.fromisoformat(day)
+    market, local_open, _ = SESSION
+    return local_open - 60 * utc_offset_hours(market, day)
+
+
+def set_plan_day(day):
+    global OPEN_MIN, CLOSE_MIN
+    OPEN_MIN = open_utc(day)
+    CLOSE_MIN = OPEN_MIN + SESSION[2]
+
+
+def parse_window(text):
+    """'13:30-20:00' (UTC) -> (open, close) in minutes."""
     m = re.match(r"^\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*$", str(text or ""))
     if not m:
         raise TMError("--window-utc wants HH:MM-HH:MM in UTC, e.g. 13:30-20:00, not %r" % text)
@@ -117,7 +180,7 @@ def set_window(text):
         b = 24 * 60
     if a % 5 or b % 5 or not 0 <= a < b <= 24 * 60 or b - a < 60:
         raise TMError("--window-utc must be on the 5-minute grid, inside one UTC day, at least an hour long")
-    OPEN_MIN, CLOSE_MIN, SESSION_BARS = a, b, (b - a) // 5
+    return a, b
 
 
 def tick(price):
@@ -307,7 +370,7 @@ def parse_bars(result, now_utc):
             continue
         start = utc_of(ts)
         local = to_eastern(start)
-        mins = local.hour * 60 + local.minute - OPEN_MIN
+        mins = local.hour * 60 + local.minute - open_utc(local.date())
         if mins < 0 or mins >= SESSION_BARS * 5:
             dropped["outside_hours"] += 1
             continue
@@ -490,7 +553,7 @@ def history_replay(sessions, rule, last, side="buy"):
         cl = D[last]["c"]
         R = ((t - e) if long else (e - t)) / risk if oc == "target" else -1.0 if oc == "stop" else \
             ((cl - e) if long else (e - cl)) / risk
-        trades.append({"date": d, "time": clock12(OPEN_MIN + 5 * (kk + 1)), "entry": e, "stop": s, "target": t,
+        trades.append({"date": d, "time": clock12(open_utc(d) + 5 * (kk + 1)), "entry": e, "stop": s, "target": t,
                        "outcome": oc or "close", "R": round(R, 2)})
     return {
         "sessions": len(sessions), "triggered": len(trades),
@@ -559,6 +622,7 @@ def normalize_plan(raw, src="flags"):
     except ValueError:
         raise TMError("the plan needs a date like 2026-10-19, got %r" % raw.get("date"))
     entry, stop, target = (_num(raw.get(k), k) for k in ("entry", "stop", "target"))
+    set_plan_day(datetime.date.fromisoformat(date))
     long = side == "buy"
     if long and not stop < entry < target:
         raise TMError("a buy needs stop < entry < target (got stop %s, entry %s, target %s)" % (stop, entry, target))
@@ -584,7 +648,7 @@ def normalize_plan(raw, src="flags"):
         raise TMError("the plan needs entry_time (the entry bar's close, UTC, e.g. 14:00) or entry_bar")
     if not 0 <= k <= SESSION_BARS - 2:
         raise TMError("the entry must close between %s and %s, inside the session window, to leave bars "
-                      "to replay (got %s); widen --window-utc if needed"
+                      "to replay (got %s); pick another --session if needed"
                       % (clock12(OPEN_MIN + 5), clock12(CLOSE_MIN - 5), clock12(OPEN_MIN + 5 * (k + 1))))
     orng = raw.get("opening_range") or {}
     or_min = orng.get("minutes", 15) if isinstance(orng, dict) else 15
@@ -755,7 +819,7 @@ def time_machine(text, plan, now_utc, replays=10000, seed=19, window=2, until=No
         "source": source,
         "data": {"symbol": msym or sym, "interval": "5m", "range": "60d",
                  "last_bar": "%s %s UTC" % (last_bar["date"], last_bar["start"]),
-                 "window_utc": "%s-%s" % (clock24(OPEN_MIN), clock24(CLOSE_MIN)),
+                 "session": SESSION_NAME, "window_utc": "%s-%s" % (clock24(OPEN_MIN), clock24(CLOSE_MIN)),
                  "dropped": dropped, "short_sessions_left_out": short},
         "plan": plan_out,
         "mc": mc,
@@ -763,9 +827,10 @@ def time_machine(text, plan, now_utc, replays=10000, seed=19, window=2, until=No
         "verdict": verdict(mc),
         "verdict_notes": verdict_notes(mc),
         "warnings": warn,
-        "note": ("A simulation built from %s's own last %d full sessions (%s-%s UTC). It is not a prediction: "
-                 "news, liquidations and exchange outages can do things those sessions never did. "
-                 "Same seed, same numbers." % (sym, len(sessions), clock24(OPEN_MIN), clock24(CLOSE_MIN))),
+        "note": ("A simulation built from %s's own last %d full sessions (%s, %s-%s UTC on the plan day). "
+                 "It is not a prediction: news, liquidations and exchange outages can do things those "
+                 "sessions never did. Same seed, same numbers."
+                 % (sym, len(sessions), SESSION_NAME, clock24(OPEN_MIN), clock24(CLOSE_MIN))),
     }
 
 
@@ -932,7 +997,9 @@ def main(argv=None):
     def common(p):
         p.add_argument("--plan", default="trader/plan.json", help="the plan from trader-exit")
         p.add_argument("--symbol", help="or give the plan as flags: ETH, BTC-USD, SOLUSDT ...")
-        p.add_argument("--window-utc", default="13:30-20:00", help="the daily session, UTC (default 13:30-20:00)")
+        p.add_argument("--session", default="europa-wallstreet",
+                       choices=sorted(SESSIONS) + ["utc"], help="the daily session (default europa-wallstreet)")
+        p.add_argument("--window-utc", help="with --session utc: a fixed UTC window, e.g. 00:00-06:00")
         p.add_argument("--side", default="buy", choices=["buy", "sell"])
         p.add_argument("--date", help="the plan's day, YYYY-MM-DD (default today, UTC)")
         p.add_argument("--entry", type=float)
@@ -963,7 +1030,7 @@ def main(argv=None):
         ap.print_help()
         return 1
     try:
-        set_window(a.window_utc)
+        set_session(a.session, a.window_utc)
         return {"run": cmd_run, "chart": cmd_chart}[a.cmd](a)
     except TMError as e:
         print("timemachine.py: %s" % e, file=sys.stderr)
