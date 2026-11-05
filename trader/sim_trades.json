@@ -77,5 +77,33 @@
     "target_r": 3,
     "flat_by": "15:55",
     "status": "open"
+  },
+  {
+    "id": 6,
+    "symbol": "NBIS",
+    "side": "short",
+    "opened": "2026-11-05 12:58 ET",
+    "entry": 118.29,
+    "shares": 4,
+    "notional_usd": 473.16,
+    "stop": 119.27,
+    "target": 115.35,
+    "target_r": 3,
+    "flat_by": "15:55",
+    "status": "open"
+  },
+  {
+    "id": 7,
+    "symbol": "ALAB",
+    "side": "short",
+    "opened": "2026-11-05 12:58 ET",
+    "entry": 186.72,
+    "shares": 2,
+    "notional_usd": 373.44,
+    "stop": 187.83,
+    "target": 183.39,
+    "target_r": 3,
+    "flat_by": "15:55",
+    "status": "open"
   }
 ]

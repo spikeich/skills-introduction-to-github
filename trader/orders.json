@@ -89,6 +89,48 @@
         "entry_time": "12:35",
         "flat_by": "15:55"
       }
+    },
+    {
+      "symbol": "NBIS",
+      "side": "sell",
+      "qty": "4",
+      "type": "market",
+      "time_in_force": "day",
+      "order_class": "bracket",
+      "take_profit_limit_price": "115.35",
+      "stop_loss_stop_price": "119.27",
+      "why": "short scalp on NBIS: 4 shares below VWAP, stop above the last 30-min high, target 3R (4 x 0.98 = $3.92 at the stop)",
+      "plan": {
+        "entry": 118.29,
+        "stop": 119.27,
+        "target": 115.35,
+        "risk_per_share": 0.98,
+        "max_loss": 3.92,
+        "setup": "vwap_short",
+        "entry_time": "12:58",
+        "flat_by": "15:55"
+      }
+    },
+    {
+      "symbol": "ALAB",
+      "side": "sell",
+      "qty": "2",
+      "type": "market",
+      "time_in_force": "day",
+      "order_class": "bracket",
+      "take_profit_limit_price": "183.39",
+      "stop_loss_stop_price": "187.83",
+      "why": "short scalp on ALAB: 2 shares below VWAP, stop above the last 30-min high, target 3R (2 x 1.11 = $2.22 at the stop)",
+      "plan": {
+        "entry": 186.72,
+        "stop": 187.83,
+        "target": 183.39,
+        "risk_per_share": 1.11,
+        "max_loss": 2.22,
+        "setup": "vwap_short",
+        "entry_time": "12:58",
+        "flat_by": "15:55"
+      }
     }
   ]
 }
