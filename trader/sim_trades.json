@@ -285,5 +285,20 @@
     "exit": 136.66,
     "exit_reason": "stop",
     "pnl_usd": -9.68
+  },
+  {
+    "id": 16,
+    "symbol": "NVDA",
+    "side": "short",
+    "opened": "2026-11-05 14:35 ET",
+    "entry": 183.01,
+    "shares": 24,
+    "notional_usd": 4392.24,
+    "stop": 184.43,
+    "target": 178.75,
+    "target_r": 3,
+    "flat_by": "15:55",
+    "strategy": "scalp",
+    "status": "open"
   }
 ]
