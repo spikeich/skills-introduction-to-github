@@ -22,7 +22,7 @@
   "allow_short": true,
   "pdt_guard": false,
   "sec_user_agent": "Your Name you@example.com",
-  "daily_profit_stop_usd": 100,
+  "daily_profit_stop_usd": 250,
   "strategy": "scalp",
   "target_r": 3
 }

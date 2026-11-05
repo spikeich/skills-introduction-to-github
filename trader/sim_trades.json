@@ -215,11 +215,12 @@
     "shares": 3,
     "notional_usd": 1028.43,
     "stop": 344.82,
-    "target": 336.78,
-    "target_r": 3,
+    "target": 334.77,
+    "target_r": 4,
     "flat_by": "15:55",
     "strategy": "scalp",
-    "status": "open"
+    "status": "open",
+    "batch_take_profit_usd": 125
   },
   {
     "id": 13,
@@ -230,11 +231,12 @@
     "shares": 2,
     "notional_usd": 1073.34,
     "stop": 539.83,
-    "target": 527.19,
-    "target_r": 3,
+    "target": 524.03,
+    "target_r": 4,
     "flat_by": "15:55",
     "strategy": "scalp",
-    "status": "open"
+    "status": "open",
+    "batch_take_profit_usd": 125
   },
   {
     "id": 14,
@@ -245,11 +247,12 @@
     "shares": 4,
     "notional_usd": 1035.28,
     "stop": 260.77,
-    "target": 252.97,
-    "target_r": 3,
+    "target": 251.02,
+    "target_r": 4,
     "flat_by": "15:55",
     "strategy": "scalp",
-    "status": "open"
+    "status": "open",
+    "batch_take_profit_usd": 125
   },
   {
     "id": 15,
@@ -260,10 +263,11 @@
     "shares": 8,
     "notional_usd": 1083.6,
     "stop": 136.66,
-    "target": 131.82,
-    "target_r": 3,
+    "target": 130.61,
+    "target_r": 4,
     "flat_by": "15:55",
     "strategy": "scalp",
-    "status": "open"
+    "status": "open",
+    "batch_take_profit_usd": 125
   }
 ]
