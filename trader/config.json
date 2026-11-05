@@ -4,11 +4,11 @@
   "max_position_pct": 75,
   "max_order_usd": 4000,
   "min_order_usd": 5,
-  "max_loss_per_trade_usd": 50,
+  "max_loss_per_trade_usd": 100,
   "max_daily_loss_usd": 250,
   "max_trades_per_day": 10,
   "max_orders_per_day": 20,
-  "min_reward_risk": 1.0,
+  "min_reward_risk": 3.0,
   "require_stop": true,
   "no_entries_before": "09:45",
   "no_entries_after": "15:30",
@@ -21,5 +21,8 @@
   "allow_margin": false,
   "allow_short": true,
   "pdt_guard": false,
-  "sec_user_agent": "Your Name you@example.com"
+  "sec_user_agent": "Your Name you@example.com",
+  "daily_profit_stop_usd": 100,
+  "strategy": "oversold_bounce_long",
+  "target_r": 3
 }
