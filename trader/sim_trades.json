@@ -11,6 +11,11 @@
     "target": 137.5,
     "flat_by": "15:55",
     "why": "below VWAP 143.90 and opening-range low 146.10; stop above the last 30-min high 143.31",
-    "status": "open"
+    "status": "closed",
+    "closed": "2026-11-05 12:26 ET",
+    "exit": 137.5,
+    "exit_reason": "target",
+    "pnl_usd": 3.52,
+    "pnl_pct": 2.5
   }
 ]
