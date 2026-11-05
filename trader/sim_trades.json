@@ -239,8 +239,12 @@
     "target_r": 4,
     "flat_by": "15:55",
     "strategy": "scalp",
-    "status": "open",
-    "batch_take_profit_usd": 125
+    "status": "closed",
+    "batch_take_profit_usd": 125,
+    "closed": "2026-11-05 14:20 ET",
+    "exit": 537.01,
+    "exit_reason": "manual close",
+    "pnl_usd": -0.68
   },
   {
     "id": 14,
@@ -255,8 +259,12 @@
     "target_r": 4,
     "flat_by": "15:55",
     "strategy": "scalp",
-    "status": "open",
-    "batch_take_profit_usd": 125
+    "status": "closed",
+    "batch_take_profit_usd": 125,
+    "closed": "2026-11-05 14:20 ET",
+    "exit": 259.89,
+    "exit_reason": "manual close",
+    "pnl_usd": -4.28
   },
   {
     "id": 15,
