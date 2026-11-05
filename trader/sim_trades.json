@@ -1,0 +1,16 @@
+[
+  {
+    "id": 1,
+    "symbol": "MRVL",
+    "side": "short",
+    "opened": "2026-11-05 11:45 ET",
+    "entry": 141.02,
+    "notional_usd": 100,
+    "shares": 0.7091,
+    "stop": 143.40,
+    "target": 137.50,
+    "flat_by": "15:55",
+    "why": "below VWAP 143.90 and opening-range low 146.10; stop above the last 30-min high 143.31",
+    "status": "open"
+  }
+]
