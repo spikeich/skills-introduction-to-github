@@ -139,7 +139,12 @@
     "target_r": 3,
     "flat_by": "15:55",
     "strategy": "oversold_bounce",
-    "status": "open"
+    "status": "cancelled",
+    "closed": "2026-11-05 13:23 ET",
+    "exit": 25.89,
+    "exit_reason": "discarded: not a scalp; excluded from results",
+    "pnl_usd": 0.0,
+    "pnl_if_counted": 2.15
   },
   {
     "id": 9,
@@ -154,7 +159,12 @@
     "target_r": 3,
     "flat_by": "15:55",
     "strategy": "oversold_bounce",
-    "status": "open"
+    "status": "cancelled",
+    "closed": "2026-11-05 13:23 ET",
+    "exit": 166.9,
+    "exit_reason": "discarded: not a scalp; excluded from results",
+    "pnl_usd": 0.0,
+    "pnl_if_counted": 1.08
   },
   {
     "id": 10,
@@ -169,7 +179,12 @@
     "target_r": 3,
     "flat_by": "15:55",
     "strategy": "oversold_bounce",
-    "status": "open"
+    "status": "cancelled",
+    "closed": "2026-11-05 13:23 ET",
+    "exit": 53.92,
+    "exit_reason": "discarded: not a scalp; excluded from results",
+    "pnl_usd": 0.0,
+    "pnl_if_counted": -0.6
   },
   {
     "id": 11,
@@ -184,6 +199,71 @@
     "target_r": 3,
     "flat_by": "15:55",
     "strategy": "oversold_bounce",
+    "status": "cancelled",
+    "closed": "2026-11-05 13:23 ET",
+    "exit": 42.4,
+    "exit_reason": "discarded: not a scalp; excluded from results",
+    "pnl_usd": 0.0,
+    "pnl_if_counted": 0.52
+  },
+  {
+    "id": 12,
+    "symbol": "AAPL",
+    "side": "short",
+    "opened": "2026-11-05 13:23 ET",
+    "entry": 342.81,
+    "shares": 3,
+    "notional_usd": 1028.43,
+    "stop": 344.82,
+    "target": 336.78,
+    "target_r": 3,
+    "flat_by": "15:55",
+    "strategy": "scalp",
+    "status": "open"
+  },
+  {
+    "id": 13,
+    "symbol": "MSFT",
+    "side": "short",
+    "opened": "2026-11-05 13:23 ET",
+    "entry": 536.67,
+    "shares": 2,
+    "notional_usd": 1073.34,
+    "stop": 539.83,
+    "target": 527.19,
+    "target_r": 3,
+    "flat_by": "15:55",
+    "strategy": "scalp",
+    "status": "open"
+  },
+  {
+    "id": 14,
+    "symbol": "AMZN",
+    "side": "short",
+    "opened": "2026-11-05 13:23 ET",
+    "entry": 258.82,
+    "shares": 4,
+    "notional_usd": 1035.28,
+    "stop": 260.77,
+    "target": 252.97,
+    "target_r": 3,
+    "flat_by": "15:55",
+    "strategy": "scalp",
+    "status": "open"
+  },
+  {
+    "id": 15,
+    "symbol": "COIN",
+    "side": "short",
+    "opened": "2026-11-05 13:23 ET",
+    "entry": 135.45,
+    "shares": 8,
+    "notional_usd": 1083.6,
+    "stop": 136.66,
+    "target": 131.82,
+    "target_r": 3,
+    "flat_by": "15:55",
+    "strategy": "scalp",
     "status": "open"
   }
 ]

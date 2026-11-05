@@ -23,6 +23,6 @@
   "pdt_guard": false,
   "sec_user_agent": "Your Name you@example.com",
   "daily_profit_stop_usd": 100,
-  "strategy": "oversold_bounce_long",
+  "strategy": "scalp",
   "target_r": 3
 }
