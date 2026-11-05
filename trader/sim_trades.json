@@ -267,7 +267,11 @@
     "target_r": 4,
     "flat_by": "15:55",
     "strategy": "scalp",
-    "status": "open",
-    "batch_take_profit_usd": 125
+    "status": "closed",
+    "batch_take_profit_usd": 125,
+    "closed": "2026-11-05 14:15 ET",
+    "exit": 136.66,
+    "exit_reason": "stop",
+    "pnl_usd": -9.68
   }
 ]
