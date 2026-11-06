@@ -20,5 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-crypto-scanner and crypto-timemachine are derived from Jakeschincariol/day-trader-skill,
+crypto-scanner, crypto-entry, crypto-exit, crypto-timemachine, crypto-risk and crypto-alerts
+are derived from Jakeschincariol/day-trader-skill,
 Copyright (c) 2026 Jake Schincariol, MIT License; see LICENSE-day-trader-skill.

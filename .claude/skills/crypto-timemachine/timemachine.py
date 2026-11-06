@@ -591,7 +591,7 @@ def load_plan(a, now_utc):
         src = "flags"
     else:
         if not os.path.exists(a.plan):
-            raise TMError("no plan at %s: run /trader-exit first, or pass --symbol --date --entry --stop "
+            raise TMError("no plan at %s: run /crypto-exit first, or pass --symbol --date --entry --stop "
                           "--target --entry-time" % a.plan)
         try:
             with open(a.plan, encoding="utf-8") as fh:
@@ -995,10 +995,10 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd")
 
     def common(p):
-        p.add_argument("--plan", default="trader/plan.json", help="the plan from trader-exit")
+        p.add_argument("--plan", default="trader/plan.json", help="the plan from crypto-exit")
         p.add_argument("--symbol", help="or give the plan as flags: ETH, BTC-USD, SOLUSDT ...")
-        p.add_argument("--session", default="europa-wallstreet",
-                       choices=sorted(SESSIONS) + ["utc"], help="the daily session (default europa-wallstreet)")
+        p.add_argument("--session", choices=sorted(SESSIONS) + ["utc"],
+                       help="the daily session (default: the plan's, else europa-wallstreet)")
         p.add_argument("--window-utc", help="with --session utc: a fixed UTC window, e.g. 00:00-06:00")
         p.add_argument("--side", default="buy", choices=["buy", "sell"])
         p.add_argument("--date", help="the plan's day, YYYY-MM-DD (default today, UTC)")
@@ -1030,7 +1030,14 @@ def main(argv=None):
         ap.print_help()
         return 1
     try:
-        set_session(a.session, a.window_utc)
+        session = a.session
+        if not session and not a.symbol and os.path.exists(a.plan):
+            try:
+                with open(a.plan, encoding="utf-8") as fh:
+                    session = (json.load(fh) or {}).get("session")
+            except (OSError, ValueError):
+                session = None
+        set_session(session or "europa-wallstreet", a.window_utc)
         return {"run": cmd_run, "chart": cmd_chart}[a.cmd](a)
     except TMError as e:
         print("timemachine.py: %s" % e, file=sys.stderr)
