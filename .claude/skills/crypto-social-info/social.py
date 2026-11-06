@@ -26,15 +26,21 @@ trader/verificaciones.json in the project. Prices: Yahoo daily closes
 
 The verification rule (see SKILL.md for how to search):
   VERIFICADA  an official document confirms it (a government, regulator or central bank
-              page, not a social post), or 4 of 5 RELIABLE sources confirm the same facts
-              (who, what, when, how much), with no credible denial
-  DUDOSA      3 of 5, or facts that do not match, a denial from a reliable source,
-              or less than an hour since the news first appeared
-  FALSA       an official denial, or 2 of 5 or fewer
-Reliable (fuentes.json): a known world newspaper, agency or financial outlet, an official
+              page, not a social post), or at least 4 RELIABLE sources confirm the same
+              facts (who, what, when, how much) AND they are 80 % or more of the reliable
+              sources that speak about it, at least 2 of them independent newspapers,
+              with no credible denial
+              --high-impact (news that can move the market a lot): at least 6 confirm,
+              85 % or more, from 2 regions or more, with an international agency
+              (Reuters, AP, AFP, Bloomberg...) or an official document among them
+  DUDOSA      close but short of that, facts that do not match, a denial from a
+              reliable source, or less than an hour since the news first appeared
+  FALSA       an official denial, or 2 confirmations or fewer
+Reliable (fuentes.json, by country): a known newspaper, agency or financial outlet, an official
 spokesperson (--vocero "Name, role|url|stance") or a recognised economist
 (--economist "Name, institution|url|stance"). Crypto outlets, blogs and copies do not
-count. X posts (--social "Account|url|stance|tilde") are only the origin of a rumour:
+count. State-controlled media (TASS, Xinhua, Antara...) count as that government's
+official voice, like a spokesperson. X posts (--social "Account|url|stance|tilde") are only the origin of a rumour:
 a blue or no checkmark is discarded, a grey or gold one is noted but never confirms.
 
 This is a study of what happened, not a prediction. A few dozen events chosen by
@@ -410,17 +416,36 @@ def parse_now(text):
 # ---------------------------------------------------------------- verification
 
 def load_reliable(path):
-    doc = read_json(path, {"medios": {}, "no_cuentan": []})
-    ok = {m.lower() for group in doc.get("medios", {}).values() for m in group}
-    return ok
+    """name (lower) -> {country, region, state, agency}, from fuentes.json."""
+    doc = read_json(path, {"por_pais": {}})
+    region_of = {c: r for r, cs in doc.get("regiones", {}).items() for c in cs}
+    agencies = {a.lower() for a in doc.get("agencias", [])}
+    out = {}
+    for country, groups in doc.get("por_pais", {}).items():
+        for kind in ("independientes", "estatales"):
+            for name in groups.get(kind, []):
+                out[name.lower()] = {"country": country, "region": region_of.get(country, "?"),
+                                     "state": kind == "estatales", "agency": name.lower() in agencies}
+    for group in doc.get("medios", {}).values():          # older flat format
+        for name in group:
+            out.setdefault(name.lower(), {"country": "?", "region": "?", "state": False,
+                                          "agency": name.lower() in agencies})
+    return out
 
 
-def is_reliable(name, ok):
+def lookup(name, ok):
+    """The catalogue entry for an outlet name, matching 'Reuters' or 'Reuters (via Yahoo)'."""
     n = name.lower().strip()
-    return any(n == m or n.startswith(m + " ") or n.startswith(m + ",") for m in ok)
+    best = None
+    for m, info in ok.items():
+        if n == m or n.startswith(m + " ") or n.startswith(m + ",") or n.startswith(m + " ("):
+            if best is None or len(m) > len(best[0]):
+                best = (m, info)
+    return best[1] if best else None
 
 
-def parse_source(text, kind, ok=frozenset()):
+def parse_source(text, kind, ok=None):
+    ok = ok or {}
     parts = [p.strip() for p in text.split("|")]
     if len(parts) < 3:
         raise SocialError("--source wants \"Medio|url|confirma\" (or parcial, desmiente, no_dice), "
@@ -439,27 +464,41 @@ def parse_source(text, kind, ok=frozenset()):
     if kind in ("vocero", "economista") and "," not in parts[0]:
         raise SocialError("a %s needs name and %s: \"Nombre, %s|url|confirma\"" % (
             kind, "role" if kind == "vocero" else "institution", "cargo" if kind == "vocero" else "institución"))
-    reliable = kind in ("oficial", "vocero", "economista") or (kind == "medio" and is_reliable(parts[0], ok))
+    info = lookup(parts[0], ok) if kind == "medio" else None
+    if kind == "medio" and info and info["state"]:
+        kind = "estatal"                      # a state outlet speaks for its government
+    reliable = kind in ("oficial", "vocero", "economista", "estatal") or (kind == "medio" and info is not None)
+    country = (info or {}).get("country") or "?"
     return {"outlet": parts[0], "url": parts[1], "stance": stance, "kind": kind, "copy_of": copy_of,
-            "tilde": tilde, "reliable": reliable}
+            "tilde": tilde, "reliable": reliable, "country": country, "region": (info or {}).get("region", "?"),
+            "agency": bool(info and info["agency"])}
 
 
-def verdict(sources, age_min):
-    """-> (status, reasons). See the module docstring."""
+def verdict(sources, age_min, high_impact=False):
+    """-> (status, reasons, stats). See the module docstring."""
     reasons = []
     official = [s for s in sources if s["kind"] == "oficial"]
     if any(s["stance"] == "desmiente" for s in official):
-        return "FALSA", ["una fuente oficial la desmiente"]
-    indep = [s for s in sources if s["kind"] in ("medio", "vocero", "economista") and s["reliable"]
-             and not s["copy_of"]]
+        return "FALSA", ["una fuente oficial la desmiente"], {}
+    counted = [s for s in sources if s["reliable"] and not s["copy_of"]
+               and s["kind"] in ("medio", "estatal", "vocero", "economista")]
+    talking = [s for s in counted if s["stance"] in ("confirma", "parcial", "desmiente")]
+    confirms = [s for s in counted if s["stance"] == "confirma"]
+    indep_conf = [s for s in confirms if s["kind"] == "medio"]
+    denies = [s for s in counted if s["stance"] == "desmiente" and s["kind"] == "medio"]
+    ratio = len(confirms) / len(talking) if talking else 0.0
+    countries = sorted({s["country"] for s in confirms if s["country"] != "?"})
+    regions = sorted({s["region"] for s in confirms if s["region"] != "?"})
+    agency = any(s["agency"] for s in confirms) or any(s["stance"] == "confirma" for s in official)
+    need, need_ratio = (6, 0.85) if high_impact else (4, 0.80)
+    stats = {"confirman": len(confirms), "hablan": len(talking), "proporcion": round(ratio, 2),
+             "paises": countries, "regiones": regions, "agencia": agency, "alto_impacto": high_impact}
+
     copies = [s for s in sources if s["copy_of"]]
     posts = [s for s in sources if s["kind"] == "redes"]
     weak = [s for s in sources if s["kind"] == "medio" and not s["reliable"] and not s["copy_of"]]
     dropped = [s for s in posts if s["tilde"] in ("azul", "ninguno")]
-    confirms = sum(1 for s in indep if s["stance"] == "confirma")
-    partial = sum(1 for s in indep if s["stance"] == "parcial")
-    denies = [s for s in indep if s["stance"] == "desmiente"]
-    of = min(len(indep), 5) if indep else 0
+    partial = [s for s in counted if s["stance"] == "parcial"]
     if copies:
         reasons.append("%d fuente(s) solo copian a otra y no cuentan" % len(copies))
     if weak:
@@ -472,28 +511,41 @@ def verdict(sources, age_min):
                        "confirmación (en 2024 hackearon la cuenta de la SEC, que tenía tilde gris)"
                        % (len(posts) - len(dropped)))
     if partial:
-        reasons.append("%d fuente(s) dan datos distintos (quién, qué, cuándo o cuánto)" % partial)
+        reasons.append("%d fuente(s) dan datos distintos (quién, qué, cuándo o cuánto)" % len(partial))
+
+    short = []
+    if len(confirms) < need:
+        short.append("confirman %d y hacen falta %d" % (len(confirms), need))
+    if talking and ratio < need_ratio:
+        short.append("confirman el %.0f %% de las que hablan del tema y hace falta el %.0f %%"
+                     % (100 * ratio, 100 * need_ratio))
+    if len(indep_conf) < 2:
+        short.append("hacen falta al menos 2 diarios independientes (las voces oficiales no alcanzan solas)")
+    if high_impact and len(regions) < 2:
+        short.append("alto impacto: hace falta confirmación de 2 regiones o más (hay %d)" % len(regions))
+    if high_impact and not agency:
+        short.append("alto impacto: hace falta una agencia internacional o un documento oficial")
+
     if official and any(s["stance"] == "confirma" for s in official) and not denies:
         status = "VERIFICADA"
         reasons.insert(0, "lo confirma un documento oficial")
     elif denies:
         status = "DUDOSA"
         reasons.insert(0, "%s la desmiente" % denies[0]["outlet"])
-    elif confirms >= 4:
+    elif not short:
         status = "VERIFICADA"
-        reasons.insert(0, "%d fuentes confiables confirman los mismos datos" % confirms)
-    elif confirms == 3:
-        status = "DUDOSA"
-        reasons.insert(0, "solo 3 fuentes confiables confirman")
-    else:
+        reasons.insert(0, "%d de %d fuentes confiables confirman los mismos datos (%.0f %%), desde %d país(es) y "
+                       "%d región(es)" % (len(confirms), len(talking), 100 * ratio, len(countries), len(regions)))
+    elif len(confirms) <= 2:
         status = "FALSA"
-        reasons.insert(0, "solo %d fuente(s) confiable(s) confirman" % confirms)
+        reasons.insert(0, "solo %d fuente(s) confiable(s) confirman" % len(confirms))
+    else:
+        status = "DUDOSA"
+        reasons[0:0] = short
     if age_min is not None and age_min < 60 and status == "VERIFICADA":
         status = "DUDOSA"
         reasons.insert(0, "salió hace %d minutos: volver a revisar en una hora (y buscar desmentidos)" % age_min)
-    if of and status != "FALSA":
-        reasons.append("revisadas %d fuentes confiables" % len(indep))
-    return status, reasons
+    return status, reasons, stats
 
 
 def cmd_verify(a):
@@ -519,20 +571,33 @@ def cmd_verify(a):
     if a.first_seen:
         first = dt.datetime.fromisoformat(a.first_seen.replace("Z", ""))
         age = int((now - first).total_seconds() // 60)
-    status, reasons = verdict(sources, age)
+    status, reasons, stats = verdict(sources, age, a.high_impact)
     cid = (max(c["id"] for c in log["checks"]) + 1) if log["checks"] else 1
     log["checks"].append({"id": cid, "claim": a.claim, "checked_at": now.strftime("%Y-%m-%d %H:%M"),
-                          "first_seen": a.first_seen, "status": status, "reasons": reasons, "sources": sources})
+                          "first_seen": a.first_seen, "status": status, "reasons": reasons, "stats": stats,
+                          "high_impact": a.high_impact, "sources": sources})
     write_json(a.log, log)
     mark = {"VERIFICADA": "OK", "DUDOSA": "??", "FALSA": "XX"}[status]
     print("[%s] %s  (#%d)\n  %s" % (mark, status, cid, a.claim))
     for r in reasons:
         print("  - " + r)
+    if a.high_impact:
+        print("  (noticia de alto impacto: 6 confirmaciones, 85 %, 2 regiones y una agencia o documento oficial)")
+    groups = {}
     for s in sources:
-        tag = ("  (copia de %s)" % s["copy_of"]) if s["copy_of"] else \
-              ("  (X, tilde %s)" % s["tilde"]) if s["kind"] == "redes" else \
-              "" if s["reliable"] else "  (no cuenta)"
-        print("    %-9s %-10s %-26s %s%s" % (s["stance"], s["kind"], s["outlet"][:26], s["url"][:64], tag))
+        key = s["country"] if s["kind"] in ("medio", "estatal") else \
+            {"oficial": "documento oficial", "vocero": "voceros", "economista": "economistas",
+             "redes": "X"}.get(s["kind"], "?")
+        groups.setdefault(key, []).append(s)
+    print("  Por país:")
+    for key in sorted(groups, key=lambda c: (c in ("?", "X"), c)):
+        print("    %s" % ("fuera de la lista" if key == "?" else key))
+        for s in groups[key]:
+            tag = ("  (copia de %s)" % s["copy_of"]) if s["copy_of"] else \
+                  ("  (tilde %s)" % s["tilde"]) if s["kind"] == "redes" else \
+                  "  (medio estatal: voz del gobierno)" if s["kind"] == "estatal" else \
+                  "" if s["reliable"] else "  (no cuenta)"
+            print("      %-9s %-26s %s%s" % (s["stance"], s["outlet"][:26], s["url"][:60], tag))
     print({"VERIFICADA": "  Se puede usar para operar y para el historial (add-event --verification %d)." % cid,
            "DUDOSA": "  No operar por esta noticia; si hay posiciones abiertas, achicar y volver a revisar en 1 hora.",
            "FALSA": "  Descartada."}[status])
@@ -594,6 +659,8 @@ def main(argv=None):
     p.add_argument("--economist", action="append", help='a recognised economist: "Name, institution|url|confirma"')
     p.add_argument("--social", action="append", help='an X post: "Account|url|confirma|gris" (gris/dorado/azul/ninguno)')
     p.add_argument("--list", action="store_true")
+    p.add_argument("--high-impact", action="store_true",
+                   help="news that can move the market a lot: 6 confirmations, 85 %%, 2 regions, an agency")
     p = sub.add_parser("news")
     p.add_argument("--query", help="comma list of words (default: crypto and macro/political words)")
     p.add_argument("--days", type=int, default=3)

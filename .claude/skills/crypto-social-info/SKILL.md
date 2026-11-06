@@ -80,9 +80,38 @@ Cuando el usuario trae una noticia, o una noticia va a decidir una operación,
 
 | veredicto | cuándo | qué se hace |
 | --- | --- | --- |
-| **VERIFICADA** | un documento oficial la confirma, o 4 de 5 fuentes confiables confirman los mismos datos, sin desmentido | se puede usar para operar y entra al historial |
-| **DUDOSA** | 3 de 5, datos que no coinciden, una fuente confiable la desmiente, o salió hace menos de 1 hora | no se opera por esa noticia; con posiciones abiertas, achicar y volver a revisar en 1 hora |
-| **FALSA** | desmentido oficial, o 2 de 5 o menos | se descarta y queda anotada |
+| **VERIFICADA** | un documento oficial la confirma, o **al menos 4** fuentes confiables confirman los mismos datos **y son el 80 % o más** de las que hablan del tema, con **al menos 2 diarios independientes**, sin desmentido | se puede usar para operar y entra al historial |
+| **DUDOSA** | le falta poco para eso, datos que no coinciden, una fuente confiable la desmiente, o salió hace menos de 1 hora | no se opera por esa noticia; con posiciones abiertas, achicar y volver a revisar en 1 hora |
+| **FALSA** | desmentido oficial, o 2 confirmaciones o menos | se descarta y queda anotada |
+
+Se pueden cargar todas las fuentes que encuentres: la regla mira la
+**proporción**, así que 10 fuentes con 4 confirmaciones no alcanzan (40 %).
+
+**Noticias de alto impacto** (`--high-impact`): las que pueden mover mucho el
+precio o cambiar lo que vas a operar (aprobación de un ETF, una prohibición, un
+gobierno que compra o vende bitcoin). Piden **6 confirmaciones, 85 %**, de **2
+regiones o más** (América, Europa, Asia y Oceanía, Medio Oriente, África) y con
+**una agencia internacional** (Reuters, AP, AFP, Bloomberg, dpa, Kyodo,
+Yonhap...) o un documento oficial entre ellas.
+
+### Fuentes por país
+
+`fuentes.json` tiene los medios confiables de 26 países, con su región. Para
+los países donde más se compra cripto (EE.UU., Rusia, Reino Unido, Alemania,
+Ucrania, Francia, Pakistán, Vietnam, Brasil, Nigeria, Indonesia, Corea del
+Sur, Japón, e India) buscá también en sus diarios: la noticia de un gobierno
+sale primero en la prensa local. `verify` muestra las fuentes **agrupadas por
+país** y cuántos países y regiones confirman.
+
+Los **medios estatales** (TASS y RIA Novosti en Rusia, Xinhua en China, VNA en
+Vietnam, APP en Pakistán, Antara en Indonesia, NAN en Nigeria, Agência Brasil...)
+cuentan como la **voz oficial de ese gobierno**, igual que un vocero: sirven
+para saber qué dice, pero una noticia nunca queda verificada solo con voces
+oficiales. Hacen falta al menos 2 diarios independientes.
+
+Para Vietnam, Indonesia, Corea del Sur y Japón buscá las ediciones en inglés
+(VnExpress International, The Jakarta Post, Korea Herald, Yonhap, Nikkei
+Asia): tu buscador las encuentra mejor.
 
 En enero de 2024 hackearon la cuenta de la SEC en X, publicaron que aprobaban
 los ETF de bitcoin, muchos medios lo repitieron en minutos y el precio saltó y
