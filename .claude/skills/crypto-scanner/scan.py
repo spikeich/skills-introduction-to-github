@@ -61,6 +61,7 @@ SPARK_MAX = 20
 PAUSE = 0.3
 CHART_PAUSE = 1.2   # one chart a coin: slower, or Yahoo answers 429
 BACKOFF = 10.0
+RATE_WAIT = 30.0   # both Yahoo hosts rate-limited: wait this long and try again
 NOTE = "A scan is a list of charts that match a rule, not a list of coins to buy or sell."
 SKIP = {
     "usdt", "usdc", "fdusd", "dai", "usde", "tusd", "usdd", "pyusd", "usd1", "usds",
@@ -145,8 +146,27 @@ def http_json(url, timeout=20):
         return json.loads(r.read().decode("utf-8", "replace"))
 
 
-def yahoo(path):
-    """query2 first, one retry after a 429, then query1 on 429 or 5xx."""
+def yahoo(path, rounds=3):
+    """query2 first, one retry after a 429, then query1 on 429 or 5xx. When both hosts
+    rate-limit, wait RATE_WAIT seconds and go round again, up to `rounds` times."""
+    last = None
+    for r in range(rounds):
+        try:
+            return _yahoo_once(path)
+        except RateLimited as e:
+            last = e.code
+            if r < rounds - 1:
+                time.sleep(RATE_WAIT)
+    raise ScanError("Yahoo answered HTTP %s on both hosts %d times in a row; try again in a few minutes"
+                    % (last, rounds))
+
+
+class RateLimited(Exception):
+    def __init__(self, code):
+        self.code = code
+
+
+def _yahoo_once(path):
     last = None
     for host in YAHOO:
         for attempt in (0, 1):
@@ -165,7 +185,7 @@ def yahoo(path):
             except (urllib.error.URLError, OSError) as e:
                 raise ScanError("could not reach Yahoo (is query2.finance.yahoo.com allowed?): %s" % e)
         time.sleep(PAUSE)
-    raise ScanError("Yahoo answered HTTP %s on both hosts; try again in a minute" % last)
+    raise RateLimited(last)
 
 
 def spark(symbols, rng, interval):
