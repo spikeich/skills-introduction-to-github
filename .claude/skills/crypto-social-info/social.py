@@ -8,6 +8,7 @@
     python3 social.py calendar                       # upcoming events and how much they moved crypto before
     python3 social.py verify --claim "..." --first-seen "2026-11-04 03:00" \\
         --source "CNBC|https://...|confirma" --source "FXStreet|https://...|confirma" ...
+    python3 social.py verify --claim "..." --source "CNBC|https://...|confirma|2026-10-30 09:00" ...
     python3 social.py verify --list
     python3 social.py add-event --date 2026-11-04 --country EE.UU. --scope politico --type elecciones \\
         --dir - --title "..." --src "CNBC, Yahoo Finance" --verification 3
@@ -36,6 +37,13 @@ The verification rule (see SKILL.md for how to search):
   DUDOSA      close but short of that, facts that do not match, a denial from a
               reliable source, or less than an hour since the news first appeared
   FALSA       an official denial, or 2 confirmations or fewer
+The date (add it to each source: "Outlet|url|confirma|2026-10-29 14:00", UTC):
+  the age of the news is counted from its EARLIEST reliable report, not from when
+  we saw it. NUEVA under 24 h (it can move the price today), RECIENTE 24-72 h
+  (mostly priced in), VIEJA over 72 h (context only, never a reason to trade today).
+  A confirmation dated more than 7 days before the others is about another event
+  and does not count. If the news showed up again (--first-seen) more than 24 h
+  after the first report, it is old news going round again: RECICLADA.
 Reliable (fuentes.json, by country): a known newspaper, agency or financial outlet, an official
 spokesperson (--vocero "Name, role|url|stance") or a recognised economist
 (--economist "Name, institution|url|stance"). Crypto outlets, blogs and copies do not
@@ -67,6 +75,9 @@ YAHOO_PAIRS = {"HYPE": "HYPE32196-USD", "UNI": "UNI7083-USD", "SUI": "SUI20947-U
 STANCES = ("confirma", "parcial", "desmiente", "no_dice")
 KINDS = ("medio", "oficial", "vocero", "economista", "redes")
 TILDES = ("gris", "dorado", "azul", "ninguno")
+FRESH_H, RECENT_H = 24, 72        # hours: NUEVA under 24, RECIENTE under 72, then VIEJA
+OTHER_EVENT_DAYS = 7              # a confirmation this much older than the others is another event
+RECYCLED_H = 24                   # seen again this long after the first report: RECICLADA
 FEEDS = {
     "The Guardian": ["https://www.theguardian.com/technology/cryptocurrencies/rss",
                      "https://www.theguardian.com/business/rss",
@@ -396,7 +407,8 @@ def cmd_news(a):
     for h in hits[:a.limit]:
         when = (h["when"] - dt.timedelta(hours=3)).strftime("%d/%m %H:%M") if h["when"] else "  ?  "
         if a.for_verify:
-            print('  --source "%s|%s|confirma"    # %s: %s' % (h["outlet"], h["url"], when, h["title"][:70]))
+            stamp = ("|" + h["when"].strftime("%Y-%m-%d %H:%M")) if h["when"] else ""
+            print('  --source "%s|%s|confirma%s"    # %s: %s' % (h["outlet"], h["url"], stamp, when, h["title"][:70]))
         else:
             print("  %s  %-18s [%s] %s\n      %s" % (when, h["outlet"], h["kind"], h["title"], h["url"]))
     if a.for_verify and hits:
@@ -444,6 +456,67 @@ def lookup(name, ok):
     return best[1] if best else None
 
 
+def parse_when(text, whole=""):
+    """'2026-10-29' or '2026-10-29 14:00' (UTC) -> naive UTC datetime."""
+    try:
+        return dt.datetime.fromisoformat(text.strip().replace("Z", "").replace("T", " "))
+    except ValueError:
+        raise SocialError("the date of a source is YYYY-MM-DD or \"YYYY-MM-DD HH:MM\" (UTC), not %r in %r"
+                          % (text, whole))
+
+
+def ago(hours):
+    if hours < 1:
+        return "%d minutos" % max(0, int(hours * 60))
+    if hours < 48:
+        return "%d horas" % int(hours)
+    return "%d días" % int(hours // 24)
+
+
+def freshness(sources, now, first_seen=None):
+    """How old the news is, from the earliest dated reliable report.
+
+    -> (label, info, reasons). Confirmations dated more than OTHER_EVENT_DAYS before
+    the median confirmation are about another event: they are marked s["other_event"]
+    and the verdict leaves them out."""
+    reasons = []
+    dated = [s for s in sources if s["when"] and s["reliable"] and not s["copy_of"]
+             and s["stance"] in ("confirma", "parcial")]
+    for s in sources:
+        if s["when"] and s["when"] > now + dt.timedelta(minutes=10):
+            raise SocialError("%s is dated %s, in the future (dates are UTC)" % (s["outlet"], s["when"]))
+    conf = sorted(s["when"] for s in dated if s["stance"] == "confirma")
+    if conf:
+        mid = conf[len(conf) // 2] if len(conf) % 2 else conf[len(conf) // 2 - 1]
+        other = [s for s in dated if s["when"] < mid - dt.timedelta(days=OTHER_EVENT_DAYS)]
+        for s in other:
+            s["other_event"] = True
+        if other:
+            reasons.append("%d fuente(s) con fecha de más de %d días antes que las demás (%s): hablan de otro "
+                           "hecho y no cuentan" % (len(other), OTHER_EVENT_DAYS, ", ".join(
+                               "%s %s" % (s["outlet"], s["when"].strftime("%d/%m/%Y")) for s in other[:3])))
+        dated = [s for s in dated if not s.get("other_event")]
+    if not dated:
+        undated = [s for s in sources if s["reliable"] and s["stance"] == "confirma" and not s["when"]]
+        if undated:
+            reasons.append("ninguna fuente tiene fecha: no se sabe si es de hoy (agregá la fecha de cada nota: "
+                           "\"Medio|url|confirma|2026-11-06 14:00\")")
+        return "SIN FECHA", {}, reasons
+    first = min(s["when"] for s in dated)
+    hours = (now - first).total_seconds() / 3600
+    label = "NUEVA" if hours < FRESH_H else "RECIENTE" if hours < RECENT_H else "VIEJA"
+    info = {"primera_nota": first.strftime("%Y-%m-%d %H:%M"), "horas": round(hours, 1), "frescura": label}
+    reasons.append("la primera nota es del %s UTC (hace %s): %s" % (first.strftime("%d/%m/%Y %H:%M"), ago(hours), {
+        "NUEVA": "es de hoy, puede mover el precio",
+        "RECIENTE": "ya tiene %d a %d horas, buena parte ya está en el precio" % (FRESH_H, RECENT_H),
+        "VIEJA": "es vieja, ya está en el precio"}[label]))
+    if first_seen and (first_seen - first).total_seconds() / 3600 > RECYCLED_H:
+        info["reciclada"] = True
+        reasons.append("la viste el %s pero los diarios la publicaron el %s: es una noticia vieja que volvió a "
+                       "circular (RECICLADA)" % (first_seen.strftime("%d/%m %H:%M"), first.strftime("%d/%m %H:%M")))
+    return label, info, reasons
+
+
 def parse_source(text, kind, ok=None):
     ok = ok or {}
     parts = [p.strip() for p in text.split("|")]
@@ -453,14 +526,19 @@ def parse_source(text, kind, ok=None):
     stance = parts[2].lower()
     if stance not in STANCES:
         raise SocialError("the stance must be one of %s, not %r" % (", ".join(STANCES), parts[2]))
-    copy_of, tilde = None, None
-    if len(parts) > 3 and parts[3].lower().startswith("copia de "):
-        copy_of = parts[3][9:].strip()
-    if kind == "redes":
-        tilde = parts[3].lower() if len(parts) > 3 else ""
-        if tilde not in TILDES:
-            raise SocialError("an X post needs its checkmark: \"Cuenta|url|confirma|gris\" (gris, dorado, azul "
-                              "or ninguno), not %r" % text)
+    copy_of, tilde, when = None, "", None
+    for extra in parts[3:]:
+        low = extra.lower()
+        if low.startswith("copia de "):
+            copy_of = extra[9:].strip()
+        elif low in TILDES:
+            tilde = low
+        elif extra:
+            when = parse_when(extra, text)
+    if kind == "redes" and tilde not in TILDES:
+        raise SocialError("an X post needs its checkmark: \"Cuenta|url|confirma|gris\" (gris, dorado, azul "
+                          "or ninguno), not %r" % text)
+    tilde = tilde or None
     if kind in ("vocero", "economista") and "," not in parts[0]:
         raise SocialError("a %s needs name and %s: \"Nombre, %s|url|confirma\"" % (
             kind, "role" if kind == "vocero" else "institution", "cargo" if kind == "vocero" else "institución"))
@@ -470,7 +548,7 @@ def parse_source(text, kind, ok=None):
     reliable = kind in ("oficial", "vocero", "economista", "estatal") or (kind == "medio" and info is not None)
     country = (info or {}).get("country") or "?"
     return {"outlet": parts[0], "url": parts[1], "stance": stance, "kind": kind, "copy_of": copy_of,
-            "tilde": tilde, "reliable": reliable, "country": country, "region": (info or {}).get("region", "?"),
+            "tilde": tilde, "when": when, "reliable": reliable, "country": country, "region": (info or {}).get("region", "?"),
             "agency": bool(info and info["agency"])}
 
 
@@ -480,8 +558,16 @@ def verdict(sources, age_min, high_impact=False):
     official = [s for s in sources if s["kind"] == "oficial"]
     if any(s["stance"] == "desmiente" for s in official):
         return "FALSA", ["una fuente oficial la desmiente"], {}
-    counted = [s for s in sources if s["reliable"] and not s["copy_of"]
-               and s["kind"] in ("medio", "estatal", "vocero", "economista")]
+    counted, seen, repeated = [], set(), 0
+    for s in sources:
+        if s["reliable"] and not s["copy_of"] and not s.get("other_event") \
+                and s["kind"] in ("medio", "estatal", "vocero", "economista"):
+            key = s["outlet"].lower().strip()
+            if key in seen:
+                repeated += 1            # two notes from one outlet are one source
+                continue
+            seen.add(key)
+            counted.append(s)
     talking = [s for s in counted if s["stance"] in ("confirma", "parcial", "desmiente")]
     confirms = [s for s in counted if s["stance"] == "confirma"]
     indep_conf = [s for s in confirms if s["kind"] == "medio"]
@@ -501,6 +587,8 @@ def verdict(sources, age_min, high_impact=False):
     partial = [s for s in counted if s["stance"] == "parcial"]
     if copies:
         reasons.append("%d fuente(s) solo copian a otra y no cuentan" % len(copies))
+    if repeated:
+        reasons.append("%d nota(s) repetidas de un mismo medio: cada medio cuenta una sola vez" % repeated)
     if weak:
         reasons.append("%d medio(s) fuera de la lista de confiables (%s): se citan pero no cuentan"
                        % (len(weak), ", ".join(s["outlet"] for s in weak[:4])))
@@ -566,20 +654,25 @@ def cmd_verify(a):
               [parse_source(s, "redes", ok) for s in a.social or []]
     if not sources:
         raise SocialError("give the sources you found: --source, --official, --vocero, --economist or --social")
-    now = utc_now()
-    age = None
-    if a.first_seen:
-        first = dt.datetime.fromisoformat(a.first_seen.replace("Z", ""))
-        age = int((now - first).total_seconds() // 60)
+    now = parse_now(a.now)
+    first = parse_when(a.first_seen, "--first-seen") if a.first_seen else None
+    fresh, finfo, freasons = freshness(sources, now, first)
+    starts = [t for t in [first, finfo.get("primera_nota") and parse_when(finfo["primera_nota"])] if t]
+    age = int((now - min(starts)).total_seconds() // 60) if starts else None
     status, reasons, stats = verdict(sources, age, a.high_impact)
+    stats.update(finfo)
+    stats["frescura"] = fresh
     cid = (max(c["id"] for c in log["checks"]) + 1) if log["checks"] else 1
     log["checks"].append({"id": cid, "claim": a.claim, "checked_at": now.strftime("%Y-%m-%d %H:%M"),
-                          "first_seen": a.first_seen, "status": status, "reasons": reasons, "stats": stats,
-                          "high_impact": a.high_impact, "sources": sources})
+                          "first_seen": a.first_seen, "status": status, "freshness": fresh,
+                          "reasons": reasons + freasons, "stats": stats, "high_impact": a.high_impact,
+                          "sources": [dict(s, when=s["when"].strftime("%Y-%m-%d %H:%M") if s["when"] else None)
+                                      for s in sources]})
     write_json(a.log, log)
     mark = {"VERIFICADA": "OK", "DUDOSA": "??", "FALSA": "XX"}[status]
-    print("[%s] %s  (#%d)\n  %s" % (mark, status, cid, a.claim))
-    for r in reasons:
+    label = fresh + (" (RECICLADA)" if finfo.get("reciclada") else "")
+    print("[%s] %s  (#%d)  fecha: %s\n  %s" % (mark, status, cid, label, a.claim))
+    for r in reasons + freasons:
         print("  - " + r)
     if a.high_impact:
         print("  (noticia de alto impacto: 6 confirmaciones, 85 %, 2 regiones y una agencia o documento oficial)")
@@ -593,14 +686,25 @@ def cmd_verify(a):
     for key in sorted(groups, key=lambda c: (c in ("?", "X"), c)):
         print("    %s" % ("fuera de la lista" if key == "?" else key))
         for s in groups[key]:
-            tag = ("  (copia de %s)" % s["copy_of"]) if s["copy_of"] else \
+            tag = ("  (otro hecho: fecha distinta)") if s.get("other_event") else \
+                  ("  (copia de %s)" % s["copy_of"]) if s["copy_of"] else \
                   ("  (tilde %s)" % s["tilde"]) if s["kind"] == "redes" else \
                   "  (medio estatal: voz del gobierno)" if s["kind"] == "estatal" else \
                   "" if s["reliable"] else "  (no cuenta)"
-            print("      %-9s %-26s %s%s" % (s["stance"], s["outlet"][:26], s["url"][:60], tag))
-    print({"VERIFICADA": "  Se puede usar para operar y para el historial (add-event --verification %d)." % cid,
-           "DUDOSA": "  No operar por esta noticia; si hay posiciones abiertas, achicar y volver a revisar en 1 hora.",
-           "FALSA": "  Descartada."}[status])
+            when = s["when"].strftime("%d/%m/%Y") if s["when"] else "sin fecha "
+            print("      %-9s %-26s %s  %s%s" % (s["stance"], s["outlet"][:26], when, s["url"][:50], tag))
+    if status == "VERIFICADA":
+        print({"NUEVA": "  Es verdad y es de hoy: se puede usar para operar y para el historial "
+                        "(add-event --verification %d)." % cid,
+               "RECIENTE": "  Es verdad, pero tiene más de %d horas: buena parte ya está en el precio. Usala con "
+                           "cuidado y no persigas el movimiento (add-event --verification %d)." % (FRESH_H, cid),
+               "VIEJA": "  Es verdad, pero es vieja: sirve de contexto, no para operar hoy "
+                        "(add-event --verification %d para el historial)." % cid,
+               "SIN FECHA": "  Es verdad, pero falta la fecha: antes de operar, fijate cuándo pasó "
+                            "(add-event --verification %d)." % cid}[fresh])
+    else:
+        print({"DUDOSA": "  No operar por esta noticia; si hay posiciones abiertas, achicar y volver a revisar en "
+                         "1 hora.", "FALSA": "  Descartada."}[status])
     return 0 if status == "VERIFICADA" else 1
 
 
@@ -653,12 +757,14 @@ def main(argv=None):
     p = sub.add_parser("verify")
     p.add_argument("--claim")
     p.add_argument("--first-seen", help='when the news first appeared, UTC, e.g. "2026-11-04 03:00"')
-    p.add_argument("--source", action="append", help='"Outlet|url|confirma" (parcial, desmiente, no_dice)')
+    p.add_argument("--source", action="append",
+                   help='"Outlet|url|confirma|2026-11-06 14:00" (parcial, desmiente, no_dice; date in UTC)')
     p.add_argument("--official", action="append", help="an official document: same format")
     p.add_argument("--vocero", action="append", help='an official spokesperson: "Name, role|url|confirma"')
     p.add_argument("--economist", action="append", help='a recognised economist: "Name, institution|url|confirma"')
     p.add_argument("--social", action="append", help='an X post: "Account|url|confirma|gris" (gris/dorado/azul/ninguno)')
     p.add_argument("--list", action="store_true")
+    p.add_argument("--now", help="pretend it is this UTC time")
     p.add_argument("--high-impact", action="store_true",
                    help="news that can move the market a lot: 6 confirmations, 85 %%, 2 regions, an agency")
     p = sub.add_parser("news")

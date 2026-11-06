@@ -9,7 +9,7 @@
  },
  "agencias": ["Reuters", "Associated Press", "AP", "AFP", "Bloomberg", "dpa", "Kyodo", "Yonhap", "EFE", "ANSA", "Interfax", "Dow Jones"],
  "por_pais": {
-  "EE.UU.": {"independientes": ["Associated Press", "AP", "Bloomberg", "Dow Jones", "The Wall Street Journal", "WSJ", "The New York Times", "The Washington Post", "CNBC", "CNN", "NPR", "Politico", "Axios", "Barron's", "Forbes", "Fortune", "MarketWatch", "Business Insider", "Yahoo Finance"], "estatales": []},
+  "EE.UU.": {"independientes": ["Associated Press", "AP", "Bloomberg", "Dow Jones", "The Wall Street Journal", "WSJ", "The New York Times", "The Washington Post", "CNBC", "CNN", "NPR", "NBC News", "CBS News", "Politico", "Axios", "Barron's", "Forbes", "Fortune", "MarketWatch", "Business Insider", "Yahoo Finance"], "estatales": []},
   "Reino Unido": {"independientes": ["Reuters", "Financial Times", "BBC", "The Guardian", "The Times", "The Economist", "The Telegraph", "Sky News"], "estatales": []},
   "Alemania": {"independientes": ["Handelsblatt", "Frankfurter Allgemeine", "FAZ", "Der Spiegel", "Süddeutsche Zeitung", "Die Zeit", "dpa", "Deutsche Welle", "DW"], "estatales": []},
   "Francia": {"independientes": ["Le Monde", "Les Echos", "AFP", "Le Figaro", "Libération", "France 24"], "estatales": []},

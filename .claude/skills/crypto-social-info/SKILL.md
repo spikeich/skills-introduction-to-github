@@ -30,7 +30,7 @@ python3 "${CLAUDE_SKILL_DIR}/social.py" study --scope social
 python3 "${CLAUDE_SKILL_DIR}/social.py" patterns                 # solo los resúmenes
 python3 "${CLAUDE_SKILL_DIR}/social.py" calendar --days 30       # lo que se viene
 python3 "${CLAUDE_SKILL_DIR}/social.py" verify --claim "..." --first-seen "2026-11-04 03:00" \
-    --source "CNBC|https://...|confirma" --source "Reuters|https://...|confirma" ...
+    --source "CNBC|https://...|confirma|2026-11-04 01:10" --source "Reuters|https://...|confirma|2026-11-04" ...
 python3 "${CLAUDE_SKILL_DIR}/social.py" verify --list
 python3 "${CLAUDE_SKILL_DIR}/social.py" add-event --date 2026-11-04 --country EE.UU. --scope politico \
     --type elecciones --dir - --title "..." --verification 1
@@ -74,18 +74,46 @@ Cuando el usuario trae una noticia, o una noticia va a decidir una operación,
    un medio que no pudiste leer.
 4. Para cada fuente marcá si **confirma** (coinciden quién, qué, cuándo y
    cuánto), es **parcial** (dice otra cifra, otra fecha u otra persona),
-   **desmiente** o **no_dice**.
-5. Anotá cuándo apareció la noticia por primera vez (`--first-seen`, UTC).
+   **desmiente** o **no_dice**, y **la fecha de la nota** en UTC:
+   `--source "CNBC|url|confirma|2026-10-30 09:00"` (o solo `2026-10-30`).
+5. Anotá cuándo te llegó la noticia (`--first-seen`, UTC): el momento en que
+   apareció en X, en el chat o en el buscador.
 6. Corré `verify`. El veredicto lo calcula el script, siempre con la misma regla:
 
 | veredicto | cuándo | qué se hace |
 | --- | --- | --- |
-| **VERIFICADA** | un documento oficial la confirma, o **al menos 4** fuentes confiables confirman los mismos datos **y son el 80 % o más** de las que hablan del tema, con **al menos 2 diarios independientes**, sin desmentido | se puede usar para operar y entra al historial |
+| **VERIFICADA** | un documento oficial la confirma, o **al menos 4** fuentes confiables confirman los mismos datos **y son el 80 % o más** de las que hablan del tema, con **al menos 2 diarios independientes**, sin desmentido | entra al historial; para operar, mirá además **la fecha** (abajo) |
 | **DUDOSA** | le falta poco para eso, datos que no coinciden, una fuente confiable la desmiente, o salió hace menos de 1 hora | no se opera por esa noticia; con posiciones abiertas, achicar y volver a revisar en 1 hora |
 | **FALSA** | desmentido oficial, o 2 confirmaciones o menos | se descarta y queda anotada |
 
 Se pueden cargar todas las fuentes que encuentres: la regla mira la
 **proporción**, así que 10 fuentes con 4 confirmaciones no alcanzan (40 %).
+Dos notas del mismo medio cuentan como una.
+
+### La fecha
+
+Que una noticia sea verdad no quiere decir que sea de hoy. `verify` cuenta la
+edad desde la **primera nota confiable**, no desde que la viste, y la muestra
+al lado del veredicto:
+
+| fecha | edad | qué se hace |
+| --- | --- | --- |
+| **NUEVA** | menos de 24 horas | puede mover el precio hoy: se usa para operar |
+| **RECIENTE** | de 24 a 72 horas | buena parte ya está en el precio: con cuidado, sin perseguir el movimiento |
+| **VIEJA** | más de 72 horas | ya está en el precio: es contexto, nunca una razón para operar hoy |
+| **SIN FECHA** | ninguna fuente tiene fecha | antes de operar, buscá cuándo pasó |
+
+- Una confirmación con fecha **más de 7 días anterior** a las demás habla de
+  **otro hecho** y no cuenta (por ejemplo, una nota de 2022 sobre otro hackeo
+  a Binance no confirma uno de 2026).
+- Si te llegó (`--first-seen`) **más de 24 horas después** de la primera
+  nota, es una noticia vieja que volvió a circular: **RECICLADA**. Es un
+  truco común en X para mover el precio con algo que ya pasó.
+- `news --for-verify` ya trae la fecha de cada nota.
+
+Ejemplo: el 6 de noviembre apareció el hackeo de 6.300 millones a Binance.
+Era verdad (Bloomberg, CNBC, NPR, NBC), pero había pasado el 29 de octubre:
+VERIFICADA, VIEJA, RECICLADA. No servía para operar ese día.
 
 **Noticias de alto impacto** (`--high-impact`): las que pueden mover mucho el
 precio o cambiar lo que vas a operar (aprobación de un ETF, una prohibición, un
