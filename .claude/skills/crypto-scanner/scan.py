@@ -201,10 +201,18 @@ def chart(sym, rng="2d", interval="5m"):
 # ---------------------------------------------------------------- universe
 
 def build_universe(limit, min_volume):
-    try:
-        coins = http_json(COINGECKO)
-    except Exception as e:
-        raise ScanError("could not reach CoinGecko (is api.coingecko.com allowed?): %s" % e)
+    coins = None
+    for attempt in range(5):
+        try:
+            coins = http_json(COINGECKO)
+            break
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == 4:
+                raise ScanError("CoinGecko answered HTTP %d%s" % (e.code, ", too many requests: wait a minute"
+                                                                  if e.code == 429 else ""))
+            time.sleep(20)   # the free tier's rate limit resets within a minute
+        except (urllib.error.URLError, OSError) as e:
+            raise ScanError("could not reach CoinGecko (is api.coingecko.com allowed?): %s" % e)
     picked = []
     for c in coins:
         s = (c.get("symbol") or "").lower()

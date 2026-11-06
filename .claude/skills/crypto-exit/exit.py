@@ -268,7 +268,7 @@ def gather(a):
         if a.entry is None or not a.side:
             raise PlanError("with --symbol also give --side buy|sell and --entry")
         return {"symbol": yahoo_symbol(a.symbol), "side": a.side, "entry": a.entry,
-                "entry_time": a.entry_time, "date": a.date or datetime.datetime.utcnow().date().isoformat(),
+                "entry_time": a.entry_time, "date": a.date or datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
                 "session": a.session or "wallstreet", "setup": "orb" if a.or_high is not None else "level",
                 "or_high": a.or_high, "or_low": a.or_low, "or_minutes": a.or_minutes}
     if not os.path.exists(a.from_file):
@@ -289,7 +289,9 @@ def gather(a):
 
 def build_plan(a):
     f = gather(a)
-    stop_rule, stop_p = parse_stop(a.stop or ("or-mid" if f["or_high"] is not None else ""))
+    if not a.stop and f["or_high"] is None:
+        raise PlanError("a level entry has no opening range: give a stop, e.g. --stop pct:1 or --stop price:X")
+    stop_rule, stop_p = parse_stop(a.stop or "or-mid")
     target_rule, target_p = parse_target(a.target)
     day = datetime.date.fromisoformat(f["date"])
     opn, close = session_times(f["session"], day)
