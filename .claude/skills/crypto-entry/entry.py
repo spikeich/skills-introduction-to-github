@@ -123,11 +123,31 @@ def rnd(x):
     return round(round(x / t) * t, 10)
 
 
+# Yahoo lists some coins under a numbered pair. crypto-scanner's trader/universe.json
+# has the full map; these are the ones it found among the most traded.
+YAHOO_PAIRS = {"HYPE": "HYPE32196-USD", "UNI": "UNI7083-USD", "SUI": "SUI20947-USD",
+               "PEPE": "PEPE24478-USD", "TRUMP": "TRUMP35336-USD"}
+
+
 def yahoo_symbol(sym):
+    """BTC -> BTC-USD; BTCUSDT -> BTC-USD; UNI -> UNI7083-USD; ETH-USD stays."""
     s = sym.strip().upper().replace("/", "-")
     if s.endswith("USDT") and "-" not in s:
         s = s[:-4]
-    return s if "-" in s else s + "-USD"
+    if s.endswith("-USD"):
+        base = s[:-4]
+    elif "-" in s:
+        return s
+    else:
+        base = s
+    try:
+        with open(os.path.join("trader", "universe.json"), encoding="utf-8") as fh:
+            for c in json.load(fh).get("coins", []):
+                if c.get("sym") == base and c.get("yahoo"):
+                    return c["yahoo"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    return YAHOO_PAIRS.get(base, base + "-USD")
 
 
 def http_json(url, timeout=20):
