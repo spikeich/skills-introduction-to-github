@@ -16,7 +16,7 @@ argument-hint: "[ETH | BTC-USD | SOLUSDT ...]"
 
 Adaptación a cripto de `trader-timemachine` del repo
 [Jakeschincariol/day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill)
-(licencia MIT, ver `LICENSE-day-trader-skill` en la carpeta de skills). El
+(licencia MIT, ver `LICENSE-day-trader-skill` en la raíz del repo). El
 algoritmo es el mismo; cambia qué es una "sesión" y cómo se redondean los
 precios.
 
@@ -27,6 +27,7 @@ ninguno?** Es una simulación con datos reales del pasado, no una predicción.
 `${CLAUDE_SKILL_DIR}` es esta carpeta.
 
 ```bash
+python3 "${CLAUDE_SKILL_DIR}/timemachine.py" run          # el plan de /crypto-exit (trader/plan.json), con su sesión
 python3 "${CLAUDE_SKILL_DIR}/timemachine.py" run --symbol ETH --side sell \
     --entry 2385.25 --stop 2400 --target 2355 --entry-time 14:00 --setup custom
 python3 "${CLAUDE_SKILL_DIR}/timemachine.py" chart --symbol ETH --side sell \
