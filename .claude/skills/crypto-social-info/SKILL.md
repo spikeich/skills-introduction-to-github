@@ -6,11 +6,14 @@ description: >-
   en cripto (prohibiciones, adopción, reservas, leyes, ETF, elecciones,
   aranceles, colapsos, escándalos) y cómo se movió el precio antes y después.
   Verifica noticias dudosas con 5 fuentes independientes, arma el calendario
-  de eventos que vienen y mide los patrones con precios reales. Usala cuando
-  el usuario pregunte por una noticia política o social de cripto, "¿esto es
-  verdad?", "¿cómo afecta esto al precio?", "qué pasó cuando China prohibió",
-  "qué se viene esta semana", o antes de operar en un día con noticias.
-argument-hint: "[study | patterns | calendar | verify --claim ... | add-event]"
+  de eventos que vienen y mide los patrones con precios reales. Lee la
+  blockchain de Bitcoin y Ethereum: comprueba transacciones de una noticia y
+  muestra comisiones, mempool y movimientos grandes. Usala cuando el usuario
+  pregunte por una noticia política o social de cripto, "¿esto es verdad?",
+  "¿cómo afecta esto al precio?", "¿ya está en el precio?", "qué pasó cuando
+  China prohibió", "qué se viene esta semana", "mirá la blockchain", "¿se
+  movieron esos bitcoin?", o antes de operar en un día con noticias.
+argument-hint: "[study | patterns | calendar | verify --claim ... | chain | add-event]"
 ---
 
 # crypto-social-info
@@ -31,7 +34,10 @@ python3 "${CLAUDE_SKILL_DIR}/social.py" patterns                 # solo los res�
 python3 "${CLAUDE_SKILL_DIR}/social.py" calendar --days 30       # lo que se viene
 python3 "${CLAUDE_SKILL_DIR}/social.py" verify --claim "..." --first-seen "2026-11-04 03:00" \
     --source "CNBC|https://...|confirma|2026-11-04 01:10" --source "Reuters|https://...|confirma|2026-11-04" ...
+python3 "${CLAUDE_SKILL_DIR}/social.py" verify --claim "..." --onchain "btc|TXID|4259" \
+    --source "CNBC|https://...|confirma|2026-11-06 14:00|anonima" --dir - --coin BTC
 python3 "${CLAUDE_SKILL_DIR}/social.py" verify --list
+python3 "${CLAUDE_SKILL_DIR}/social.py" chain                    # la red de Bitcoin y Ethereum ahora
 python3 "${CLAUDE_SKILL_DIR}/social.py" add-event --date 2026-11-04 --country EE.UU. --scope politico \
     --type elecciones --dir - --title "..." --verification 1
 ```
@@ -122,6 +128,54 @@ regiones o más** (América, Europa, Asia y Oceanía, Medio Oriente, África) y 
 **una agencia internacional** (Reuters, AP, AFP, Bloomberg, dpa, Kyodo,
 Yonhap...) o un documento oficial entre ellas.
 
+### Fuentes anónimas
+
+Si una nota se basa solo en "fuentes cercanas", "people familiar with the
+matter" o "según personas al tanto", agregale `|anonima`:
+`--source "Bloomberg|url|confirma|2026-11-06 12:00|anonima"`. **Todas las
+notas anónimas juntas cuentan como una sola confirmación**: cinco diarios que
+citan a "una persona al tanto" pueden estar citando a la misma persona.
+
+### La prueba en la blockchain (`--onchain`)
+
+Los hackeos, los movimientos de ballenas, las ventas de un gobierno y los
+pagos se ven en la cadena. Si la noticia trae el número de transacción (o lo
+encontrás en el explorador), cargalo:
+
+```bash
+--onchain "btc|TXID|4259"              # Bitcoin, por mempool.space
+--onchain "eth|0xHASH|12.5"            # Ethereum (ETH), por eth.blockscout.com
+--onchain "eth|0xHASH|503.9 USDT"      # un token de Ethereum
+```
+
+El script lee la transacción y compara el monto (con 1 % de tolerancia, sin
+separador de miles):
+
+| la cadena muestra | qué pasa |
+| --- | --- |
+| la transacción con ese monto | se movió la plata; con **2 diarios independientes** que digan de quién es, queda **VERIFICADA** (no hacen falta 4) |
+| la transacción, pero otro monto o sin confirmar | **DUDOSA**: la noticia tiene datos mal |
+| no existe, o falló | **FALSA** |
+| la transacción, sin diarios | **DUDOSA**: la cadena prueba que se movió la plata, **nunca de quién es** |
+
+La hora del bloque cuenta como la fecha del hecho. Necesita `mempool.space` y
+`eth.blockscout.com` en la red del entorno. Solo Bitcoin y Ethereum.
+
+### ¿Ya está en el precio? (`--dir`)
+
+Aunque sea NUEVA, el precio puede haberse movido en los primeros minutos.
+`--dir -` (noticia mala para la cripto) o `--dir +` (buena), con `--coin`
+(BTC por defecto), mide cuánto se movió desde la primera nota contra lo normal
+para esas horas (velas de Yahoo de 5 minutos, o de 1 hora si pasaron más de 2
+días):
+
+| se movió | veredicto | qué se hace |
+| --- | --- | --- |
+| 2 veces lo normal o más, a favor de la noticia | **YA ESTÁ EN EL PRECIO** | no persigas el movimiento |
+| entre 1 y 2 veces, a favor | **EN PARTE** | con cuidado |
+| menos de 1 vez | **TODAVÍA NO SE MOVIÓ** | si es NUEVA, puede faltar la reacción |
+| 1 vez o más, en contra | **AL REVÉS** | el mercado no le cree o ya la tenía descontada: no operes a favor de la noticia |
+
 ### Fuentes por país
 
 `fuentes.json` tiene los medios confiables de 26 países, con su región. Para
@@ -150,6 +204,26 @@ nunca queda VERIFICADA.
 
 Mostrale al usuario el veredicto, las razones y los links. Nunca inventes
 fuentes ni des una noticia por cierta sin pasar por `verify`.
+
+## La red ahora (`chain`)
+
+`chain` muestra el estado de Bitcoin (mempool.space) y Ethereum
+(eth.blockscout.com). Va en la revisión del mercado, junto con `calendar` y
+`news`:
+
+- **Comisiones** de Bitcoin ahora contra la mediana de los últimos 15
+  bloques: **normales**, **altas** (1,5 veces) o **muy altas** (3 veces). Muy
+  altas quiere decir mucha gente apurada por mover BTC, como en las caídas
+  fuertes (depósitos para vender) o en las subidas con euforia: esperá más
+  volatilidad y achicá el tamaño.
+- **Transacciones esperando** en el mempool y el ritmo de los bloques.
+- **Movimientos de 1.000 BTC o más** en los últimos 6 bloques (`--min-btc`,
+  `--blocks`), con su link y la línea `--onchain` lista para `verify`.
+- **Ethereum:** gas y uso de la red.
+
+Es contexto, no una señal. **Un movimiento grande no es una venta**: muchas
+veces es un exchange ordenando sus billeteras. La blockchain no dice de quién es
+una dirección.
 
 ## Noticias de The Guardian, New York Times y BBC
 

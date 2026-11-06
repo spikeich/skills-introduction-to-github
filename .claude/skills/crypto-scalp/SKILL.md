@@ -27,13 +27,16 @@ con 429 si se consulta muy seguido: `paper.py` ya reintenta y consulta cada
 ## Antes de empezar: primero `/crypto-social-info`
 
 Regla fija: **antes de usar esta skill, corré `/crypto-social-info`**
-(`calendar` y `news`, y verificá con la regla de 5 fuentes cualquier noticia
+(`calendar`, `news` y `chain`, y verificá con la regla de 5 fuentes cualquier noticia
 grande del día). Lo que encuentres manda sobre lo que diga el gráfico:
 
 - **Noticia mala verificada y NUEVA** (de las últimas 24 horas: prohibición,
   demanda, colapso, aranceles, resultado político en contra): preferí cortos y
   achicá los largos. Si es **VIEJA** (más de 3 días), ya está en el precio: es
-  contexto, no una razón para operar hoy.
+  contexto, no una razón para operar hoy. Si `verify --dir` dice **YA ESTÁ
+  EN EL PRECIO** o **AL REVÉS**, no persigas el movimiento.
+- **Comisiones de Bitcoin muy altas** (`chain`): más volatilidad, achicá el
+  tamaño.
 - **Evento grande en las próximas horas** (dato de inflación, decisión de la
   Fed, votación, fallo): achicá el tamaño o esperá a que pase.
 - **Noticia dudosa**: no decide nada hasta que se verifique.

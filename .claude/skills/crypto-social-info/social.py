@@ -9,12 +9,18 @@
     python3 social.py verify --claim "..." --first-seen "2026-11-04 03:00" \\
         --source "CNBC|https://...|confirma" --source "FXStreet|https://...|confirma" ...
     python3 social.py verify --claim "..." --source "CNBC|https://...|confirma|2026-10-30 09:00" ...
+    python3 social.py verify --claim "..." --onchain "btc|TXID|4259" --source ... --dir - --coin BTC
     python3 social.py verify --list
+    python3 social.py chain                          # Bitcoin and Ethereum networks: fees, mempool, big moves
     python3 social.py add-event --date 2026-11-04 --country EE.UU. --scope politico --type elecciones \\
         --dir - --title "..." --src "CNBC, Yahoo Finance" --verification 3
     python3 social.py news                           # crypto and political headlines: Guardian, NYT, BBC (RSS)
     python3 social.py news --query "tariff,china" --days 2
     python3 social.py news --query "stablecoin" --for-verify   # ready-made --source lines for verify
+
+Chain: mempool.space (fees, mempool, the last blocks and every transaction of
+1,000 BTC or more in the last 6) and eth.blockscout.com (gas, network use). Context
+for the analysis, not a signal: a big transfer is not a sale.
 
 News: the public RSS feeds of The Guardian (www.theguardian.com), The New York
 Times (rss.nytimes.com) and the BBC (feeds.bbci.co.uk), the format they publish
@@ -44,6 +50,16 @@ The date (add it to each source: "Outlet|url|confirma|2026-10-29 14:00", UTC):
   A confirmation dated more than 7 days before the others is about another event
   and does not count. If the news showed up again (--first-seen) more than 24 h
   after the first report, it is old news going round again: RECICLADA.
+Anonymous sources ("Outlet|url|confirma|anonima": "people familiar with the matter")
+  all count together as ONE confirmation.
+On-chain (--onchain "btc|TXID|4259" or "eth|0xHASH|503.9 USDT"): the script reads the
+  transaction from mempool.space (Bitcoin) or eth.blockscout.com (Ethereum). If it is
+  on the chain with that amount, the money moved: with 2 independent newspapers saying
+  whose it is, that is VERIFICADA. A transaction that does not exist, or failed, is
+  FALSA. The chain proves the movement, never who owns the address.
+Price (--dir + or -, --coin BTC): how much the coin moved since the first report,
+  against its normal move over that many hours. 2x normal or more in the direction of
+  the news: YA ESTÁ EN EL PRECIO, do not chase it.
 Reliable (fuentes.json, by country): a known newspaper, agency or financial outlet, an official
 spokesperson (--vocero "Name, role|url|stance") or a recognised economist
 (--economist "Name, institution|url|stance"). Crypto outlets, blogs and copies do not
@@ -63,6 +79,7 @@ import os
 import statistics as st
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -78,6 +95,11 @@ TILDES = ("gris", "dorado", "azul", "ninguno")
 FRESH_H, RECENT_H = 24, 72        # hours: NUEVA under 24, RECIENTE under 72, then VIEJA
 OTHER_EVENT_DAYS = 7              # a confirmation this much older than the others is another event
 RECYCLED_H = 24                   # seen again this long after the first report: RECICLADA
+ANON = ("anonima", "anónima", "anonimas", "anónimas", "anon")
+CHAIN_API = {"btc": "https://mempool.space/api/tx/%s", "eth": "https://eth.blockscout.com/api/v2/transactions/%s"}
+CHAIN_WEB = {"btc": "https://mempool.space/tx/%s", "eth": "https://eth.blockscout.com/tx/%s"}
+AMOUNT_TOL = 0.01                 # an on-chain amount within 1 % of the claim matches
+PRICED_Z, PARTLY_Z = 2.0, 1.0     # move since the first report, in normal moves for that horizon
 FEEDS = {
     "The Guardian": ["https://www.theguardian.com/technology/cryptocurrencies/rss",
                      "https://www.theguardian.com/business/rss",
@@ -469,7 +491,7 @@ def ago(hours):
     if hours < 1:
         return "%d minutos" % max(0, int(hours * 60))
     if hours < 48:
-        return "%d horas" % int(hours)
+        return "%d horas" % round(hours)
     return "%d días" % int(hours // 24)
 
 
@@ -517,6 +539,263 @@ def freshness(sources, now, first_seen=None):
     return label, info, reasons
 
 
+# ---------------------------------------------------------------- on-chain
+
+def fetch_json(url, what):
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.loads(r.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise SocialError("%s answered %s for %s" % (urllib.parse.urlparse(url).netloc, e.code, what))
+    except Exception as e:
+        raise SocialError("could not reach %s (is it allowed in the environment's network?): %s"
+                          % (urllib.parse.urlparse(url).netloc, e))
+
+
+def fetch_tx(chain, txid, offline=None):
+    """The explorer's JSON for a transaction, or None when the chain has no such transaction."""
+    if offline:
+        path = os.path.join(offline, "%s.json" % txid)
+        return read_json(path) if os.path.exists(path) else None
+    return fetch_json(CHAIN_API[chain] % txid, "transaction " + txid)
+
+
+def eth_tokens(txid, raw, offline=None):
+    """[(amount, SYMBOL)] of the ERC-20 transfers in a transaction."""
+    items = raw.get("token_transfers")
+    if items is None or raw.get("token_transfers_overflow"):
+        if offline:
+            path = os.path.join(offline, "%s.tokens.json" % txid)
+            doc = read_json(path) if os.path.exists(path) else {"items": []}
+        else:
+            doc = fetch_json(CHAIN_API["eth"] % txid + "/token-transfers", "token transfers") or {"items": []}
+        items = doc.get("items") or []
+    out = []
+    for it in items:
+        tok, tot = it.get("token") or {}, it.get("total") or {}
+        try:
+            dec = int(tot.get("decimals") or tok.get("decimals") or 0)
+            out.append((int(tot["value"]) / 10 ** dec, (tok.get("symbol") or "?").upper()))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def fmt_amount(x):
+    if x < 1:
+        return ("%.8f" % x).rstrip("0").rstrip(".")
+    text = "{:,.2f}".format(x).replace(",", " ")
+    return text[:-3] if text.endswith(".00") else text
+
+
+def parse_onchain(text, offline=None):
+    """--onchain "btc|TXID|4259" -> a source dict, after reading the transaction."""
+    parts = [p.strip() for p in text.split("|")]
+    if len(parts) < 2 or parts[0].lower() not in CHAIN_API:
+        raise SocialError('--onchain wants "btc|TXID|amount" or "eth|0xHASH|amount [TOKEN]", not %r' % text)
+    chain, txid = parts[0].lower(), parts[1]
+    import re
+    if chain == "btc" and not re.fullmatch(r"[0-9a-fA-F]{64}", txid):
+        raise SocialError("a Bitcoin transaction id is 64 hex characters, not %r" % txid)
+    if chain == "eth" and not re.fullmatch(r"0x[0-9a-fA-F]{64}", txid):
+        raise SocialError("an Ethereum transaction hash is 0x and 64 hex characters, not %r" % txid)
+    claim, unit = None, chain.upper()
+    if len(parts) > 2 and parts[2]:
+        bits = parts[2].split()
+        if "," in bits[0]:
+            raise SocialError("write the amount without thousands separators (4259 or 503.9), not %r" % parts[2])
+        try:
+            claim = float(bits[0])
+        except ValueError:
+            raise SocialError("the amount must be a number, like 4259 or 503.9 USDT, not %r" % parts[2])
+        if len(bits) > 1:
+            unit = bits[1].upper()
+    raw = fetch_tx(chain, txid, offline)
+    src = {"outlet": "blockchain " + chain.upper(), "url": CHAIN_WEB[chain] % txid, "kind": "onchain",
+           "copy_of": None, "tilde": None, "anon": False, "reliable": True, "country": "?", "region": "?",
+           "agency": False, "when": None, "claim": claim, "unit": unit}
+    if raw is None:
+        return dict(src, stance="desmiente", detail="esa transacción no existe en la blockchain")
+    amounts = []
+    if chain == "btc":
+        status = raw.get("status") or {}
+        confirmed, block = bool(status.get("confirmed")), status.get("block_height")
+        if status.get("block_time"):
+            src["when"] = dt.datetime.fromtimestamp(status["block_time"], dt.timezone.utc).replace(tzinfo=None)
+        outs = [o.get("value", 0) / 1e8 for o in raw.get("vout", [])]
+        amounts = [(v, "BTC") for v in outs] + [(sum(outs), "BTC")]
+        failed = False
+    else:
+        block = raw.get("block_number")
+        confirmed = block is not None and raw.get("result") not in (None, "pending")
+        failed = confirmed and (raw.get("result") != "success" or raw.get("status") != "ok")
+        if raw.get("timestamp"):
+            src["when"] = parse_when(raw["timestamp"][:19])
+        if int(raw.get("value") or 0):
+            amounts.append((int(raw["value"]) / 1e18, "ETH"))
+        amounts += eth_tokens(txid, raw, offline)
+    if failed:
+        return dict(src, stance="desmiente", detail="la transacción falló en la blockchain (%s)" % raw.get("result"))
+    if not confirmed:
+        return dict(src, stance="parcial", detail="la transacción existe pero todavía no está confirmada")
+    when = src["when"].strftime("%d/%m/%Y %H:%M UTC") if src["when"] else "?"
+    shown = sorted({(round(v, 8), u) for v, u in amounts if v}, reverse=True)[:3]
+    moved = ", ".join("%s %s" % (fmt_amount(v), u) for v, u in shown) or "sin montos"
+    detail = "confirmada en el bloque %s (%s): movió %s" % (block, when, moved)
+    if claim is not None:
+        hit = [v for v, u in amounts if u == unit and v and abs(v - claim) <= AMOUNT_TOL * claim]
+        if not hit:
+            return dict(src, stance="parcial", detail="%s; la noticia dice %s %s" % (detail, fmt_amount(claim), unit))
+    return dict(src, stance="confirma", detail=detail)
+
+
+# ---------------------------------------------------------------- the chain right now
+
+MEMPOOL = "https://mempool.space/api"
+BLOCKSCOUT = "https://eth.blockscout.com/api/v2"
+
+
+def chain_get(url, offline=None):
+    """GET a JSON from an explorer, or from OFFLINE/<last part of the path>.json."""
+    if offline:
+        name = url.rstrip("/").split("/api/")[-1].replace("/", "_") + ".json"
+        path = os.path.join(offline, name)
+        if not os.path.exists(path):
+            raise SocialError("no saved answer %s" % path)
+        return read_json(path)
+    doc = fetch_json(url, url.split("/api/")[-1])
+    if doc is None:
+        raise SocialError("%s answered 404" % url)
+    return doc
+
+
+def cmd_chain(a):
+    off = a.offline
+    now = parse_now(a.now)
+    print("BLOCKCHAIN, %s hora Argentina (contexto para el análisis, no una señal)"
+          % (now - dt.timedelta(hours=3)).strftime("%d/%m %H:%M"))
+    fees = chain_get(MEMPOOL + "/v1/fees/recommended", off)
+    pool = chain_get(MEMPOOL + "/mempool", off)
+    blocks = chain_get(MEMPOOL + "/v1/blocks", off)
+    med = st.median([(b.get("extras") or {}).get("medianFee") or 0 for b in blocks]) or 1.0
+    ratio = fees["fastestFee"] / med
+    level = "muy altas" if ratio >= 3 else "altas" if ratio >= 1.5 else "normales"
+    print("\nBitcoin (mempool.space)")
+    print("  Comisiones: rápida %s sat/vB, media hora %s, una hora %s. Mediana de los últimos %d bloques: %.1f "
+          "-> %s" % (fees["fastestFee"], fees["halfHourFee"], fees["hourFee"], len(blocks), med, level))
+    print("  Esperando: %s transacciones, %.1f MvB (unos %d bloques)"
+          % ("{:,}".format(pool["count"]).replace(",", " "), pool["vsize"] / 1e6, round(pool["vsize"] / 1e6)))
+    ts = [b["timestamp"] for b in blocks]
+    tip = dt.datetime.fromtimestamp(max(ts), dt.timezone.utc).replace(tzinfo=None)
+    span = (max(ts) - min(ts)) / 60 / max(1, len(ts) - 1)
+    print("  Último bloque %d hace %d min; promedio entre bloques %.1f min (lo normal es 10)"
+          % (blocks[0]["height"], max(0, (now - tip).total_seconds() // 60), span))
+    big = []
+    for b in blocks[:a.blocks]:
+        for t in chain_get(MEMPOOL + "/v1/block/%s/summary" % b["id"], off):
+            if t.get("value", 0) / 1e8 >= a.min_btc and t.get("fee", 0) > 0:      # fee 0: the miner's reward
+                big.append((t["value"] / 1e8, b["height"], t["txid"]))
+    big.sort(reverse=True)
+    print("  Movimientos de %s BTC o más en los últimos %d bloques: %d%s"
+          % (fmt_amount(a.min_btc), min(a.blocks, len(blocks)), len(big),
+             (", en total %s BTC" % fmt_amount(sum(v for v, _, _ in big))) if big else ""))
+    for v, h, txid in big[:a.top]:
+        print("    bloque %d  %12s BTC  https://mempool.space/tx/%s" % (h, fmt_amount(v), txid))
+    if big:
+        print('    (para usar uno en verify: --onchain "btc|%s|%s")' % (big[0][2], ("%.8f" % big[0][0]).rstrip("0")))
+    try:
+        eth = chain_get(BLOCKSCOUT + "/stats", off)
+        g = eth.get("gas_prices") or {}
+        print("\nEthereum (eth.blockscout.com)")
+        print("  Gas: lento %s, medio %s, rápido %s gwei; uso de la red %.0f %%; %s transacciones hoy"
+              % (g.get("slow"), g.get("average"), g.get("fast"), float(eth.get("network_utilization_percentage") or 0),
+                 "{:,}".format(int(eth.get("transactions_today") or 0)).replace(",", " ")))
+    except SocialError as e:
+        print("\nEthereum: no se pudo leer (%s)" % e)
+    print("\nLectura:")
+    print({"muy altas": "  - Comisiones muy altas: mucha gente apurada por mover BTC. Suele pasar en caídas fuertes "
+                        "(depósitos para vender) o en subidas con euforia: esperá más volatilidad.",
+           "altas": "  - Comisiones altas: más movimiento que lo normal en la red.",
+           "normales": "  - Comisiones normales: la red está tranquila, nadie está apurado."}[level])
+    if big:
+        print("  - Un movimiento grande no es una venta: puede ser un exchange ordenando sus billeteras. "
+              "La blockchain no dice de quién es: eso lo tiene que decir una fuente (verify --onchain).")
+    if a.json:
+        write_json(a.json, {"at": now.isoformat(), "fees": fees, "median_fee": med, "level": level,
+                            "mempool": pool, "big": [{"btc": v, "block": h, "txid": t} for v, h, t in big]})
+    return 0
+
+
+# ---------------------------------------------------------------- price reaction
+
+def intraday(sym, interval, rng):
+    q = urllib.parse.urlencode({"interval": interval, "range": rng})
+    url = "https://query2.finance.yahoo.com/v8/finance/chart/%s?%s" % (urllib.parse.quote(sym), q)
+    for attempt in range(2):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA})
+            return json.load(urllib.request.urlopen(req, timeout=30))["chart"]["result"][0]
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt == 0:
+                time.sleep(15)
+                continue
+            raise SocialError("could not get %s from Yahoo: %s" % (sym, e))
+        except Exception as e:
+            raise SocialError("could not get %s from Yahoo (is query2.finance.yahoo.com allowed?): %s" % (sym, e))
+
+
+def price_reaction(coin, since, now, direction, offline=None):
+    """How far the coin moved since the first report, in normal moves for that horizon."""
+    import math
+    hours = (now - since).total_seconds() / 3600
+    sym = yahoo(coin)
+    if hours > 55 * 24:
+        return {"label": "NO SE MIDE", "text": "la primera nota tiene más de 55 días: ya está en el precio"}
+    if offline:
+        res = read_json(offline)["chart"]["result"][0]
+    else:
+        res = intraday(sym, *(("5m", "5d") if hours <= 48 else ("1h", "60d")))
+    q = res["indicators"]["quote"][0]
+    bars = [(t, o, c) for t, o, c in zip(res.get("timestamp") or [], q.get("open") or [], q.get("close") or [])
+            if c is not None]
+    if len(bars) < 60:
+        return {"label": "SIN DATOS", "text": "Yahoo no trajo suficientes velas de %s" % sym}
+    steps = sorted(b[0] - a[0] for a, b in zip(bars, bars[1:]))
+    step = steps[len(steps) // 2]
+    t0 = since.replace(tzinfo=dt.timezone.utc).timestamp()
+    t1 = now.replace(tzinfo=dt.timezone.utc).timestamp()
+    closed = [b for b in bars if b[0] + step <= t1]
+    before = [b for b in closed if b[0] + step <= t0]
+    if not before:
+        return {"label": "SIN DATOS", "text": "los datos de %s empiezan después de la primera nota" % sym}
+    p0, p1 = before[-1][2], closed[-1][2]
+    base = [math.log(b[2] / a[2]) for a, b in zip(before[-1000:], before[-999:])]
+    if len(base) < 50:
+        base = [math.log(b[2] / a[2]) for a, b in zip(closed, closed[1:])]
+    sigma = st.pstdev(base) if len(base) > 1 else 0.0
+    n = max(1.0, (closed[-1][0] + step - before[-1][0] - step) / step)
+    z = math.log(p1 / p0) / (sigma * math.sqrt(n)) if sigma else 0.0
+    zs = z if direction == "+" else -z
+    move = p1 / p0 - 1
+    verb = "subió" if move >= 0 else "bajó"
+    head = "%s %s %.2f %% desde la primera nota (%.1f veces lo normal en %s)" % (
+        coin.upper(), verb, abs(100 * move), abs(z), ago(hours))
+    if zs >= PRICED_Z:
+        label, tail = "YA ESTÁ EN EL PRECIO", "ya se movió a favor de la noticia: no persigas el movimiento"
+    elif zs >= PARTLY_Z:
+        label, tail = "EN PARTE", "ya se movió algo a favor de la noticia: buena parte puede estar en el precio"
+    elif zs > -PARTLY_Z:
+        label, tail = "TODAVÍA NO SE MOVIÓ", "el precio casi no reaccionó"
+    else:
+        label, tail = "AL REVÉS", ("el precio fue en contra de la noticia: el mercado no le cree o ya la tenía "
+                                   "descontada")
+    return {"label": label, "text": "%s: %s" % (head, tail), "coin": sym, "desde": since.strftime("%Y-%m-%d %H:%M"),
+            "p0": p0, "p1": p1, "movimiento": round(move, 5), "z": round(z, 2)}
+
+
 def parse_source(text, kind, ok=None):
     ok = ok or {}
     parts = [p.strip() for p in text.split("|")]
@@ -526,11 +805,13 @@ def parse_source(text, kind, ok=None):
     stance = parts[2].lower()
     if stance not in STANCES:
         raise SocialError("the stance must be one of %s, not %r" % (", ".join(STANCES), parts[2]))
-    copy_of, tilde, when = None, "", None
+    copy_of, tilde, when, anon = None, "", None, False
     for extra in parts[3:]:
         low = extra.lower()
         if low.startswith("copia de "):
             copy_of = extra[9:].strip()
+        elif low in ANON:
+            anon = True
         elif low in TILDES:
             tilde = low
         elif extra:
@@ -548,7 +829,7 @@ def parse_source(text, kind, ok=None):
     reliable = kind in ("oficial", "vocero", "economista", "estatal") or (kind == "medio" and info is not None)
     country = (info or {}).get("country") or "?"
     return {"outlet": parts[0], "url": parts[1], "stance": stance, "kind": kind, "copy_of": copy_of,
-            "tilde": tilde, "when": when, "reliable": reliable, "country": country, "region": (info or {}).get("region", "?"),
+            "tilde": tilde, "when": when, "anon": anon, "reliable": reliable, "country": country, "region": (info or {}).get("region", "?"),
             "agency": bool(info and info["agency"])}
 
 
@@ -558,13 +839,22 @@ def verdict(sources, age_min, high_impact=False):
     official = [s for s in sources if s["kind"] == "oficial"]
     if any(s["stance"] == "desmiente" for s in official):
         return "FALSA", ["una fuente oficial la desmiente"], {}
-    counted, seen, repeated = [], set(), 0
+    chain = [s for s in sources if s["kind"] == "onchain"]
+    bad_chain = [s for s in chain if s["stance"] == "desmiente"]
+    if bad_chain:
+        return "FALSA", ["%s: %s" % (bad_chain[0]["outlet"], bad_chain[0]["detail"])], {}
+    chain_ok = [s for s in chain if s["stance"] == "confirma"]
+    chain_off = [s for s in chain if s["stance"] == "parcial"]
+    counted, seen, repeated, anon_extra = [], set(), 0, 0
     for s in sources:
         if s["reliable"] and not s["copy_of"] and not s.get("other_event") \
                 and s["kind"] in ("medio", "estatal", "vocero", "economista"):
-            key = s["outlet"].lower().strip()
+            key = "(anónimas)" if s.get("anon") else s["outlet"].lower().strip()
             if key in seen:
-                repeated += 1            # two notes from one outlet are one source
+                if s.get("anon"):
+                    anon_extra += 1      # every "people familiar with the matter" may be the same person
+                else:
+                    repeated += 1        # two notes from one outlet are one source
                 continue
             seen.add(key)
             counted.append(s)
@@ -575,7 +865,8 @@ def verdict(sources, age_min, high_impact=False):
     ratio = len(confirms) / len(talking) if talking else 0.0
     countries = sorted({s["country"] for s in confirms if s["country"] != "?"})
     regions = sorted({s["region"] for s in confirms if s["region"] != "?"})
-    agency = any(s["agency"] for s in confirms) or any(s["stance"] == "confirma" for s in official)
+    agency = any(s["agency"] for s in confirms) or any(s["stance"] == "confirma" for s in official) \
+        or bool(chain_ok)
     need, need_ratio = (6, 0.85) if high_impact else (4, 0.80)
     stats = {"confirman": len(confirms), "hablan": len(talking), "proporcion": round(ratio, 2),
              "paises": countries, "regiones": regions, "agencia": agency, "alto_impacto": high_impact}
@@ -589,6 +880,12 @@ def verdict(sources, age_min, high_impact=False):
         reasons.append("%d fuente(s) solo copian a otra y no cuentan" % len(copies))
     if repeated:
         reasons.append("%d nota(s) repetidas de un mismo medio: cada medio cuenta una sola vez" % repeated)
+    anon_all = [s for s in sources if s.get("anon") and s["stance"] == "confirma"]
+    if len(anon_all) > 1:
+        reasons.append("%d nota(s) se basan solo en fuentes anónimas (\"según fuentes cercanas\"): todas juntas "
+                       "cuentan como una" % len(anon_all))
+    for c in chain_ok + chain_off:
+        reasons.append("%s: %s" % (c["outlet"], c["detail"]))
     if weak:
         reasons.append("%d medio(s) fuera de la lista de confiables (%s): se citan pero no cuentan"
                        % (len(weak), ", ".join(s["outlet"] for s in weak[:4])))
@@ -620,10 +917,22 @@ def verdict(sources, age_min, high_impact=False):
     elif denies:
         status = "DUDOSA"
         reasons.insert(0, "%s la desmiente" % denies[0]["outlet"])
+    elif chain_off:
+        status = "DUDOSA"
+        reasons.insert(0, "la blockchain no coincide con la noticia (otra cifra o sin confirmar)")
+    elif chain_ok and len(indep_conf) >= 2 and not (talking and ratio < need_ratio) \
+            and not (high_impact and len(regions) < 2):
+        status = "VERIFICADA"
+        reasons.insert(0, "la transacción está en la blockchain y %d diarios independientes dicen de quién es"
+                       % len(indep_conf))
     elif not short:
         status = "VERIFICADA"
         reasons.insert(0, "%d de %d fuentes confiables confirman los mismos datos (%.0f %%), desde %d país(es) y "
                        "%d región(es)" % (len(confirms), len(talking), 100 * ratio, len(countries), len(regions)))
+    elif chain_ok:
+        status = "DUDOSA"
+        reasons.insert(0, "la blockchain prueba que se movió la plata, pero no de quién es: hacen falta 2 diarios "
+                       "independientes que lo digan")
     elif len(confirms) <= 2:
         status = "FALSA"
         reasons.insert(0, "solo %d fuente(s) confiable(s) confirman" % len(confirms))
@@ -652,8 +961,12 @@ def cmd_verify(a):
               [parse_source(s, "vocero", ok) for s in a.vocero or []] + \
               [parse_source(s, "economista", ok) for s in a.economist or []] + \
               [parse_source(s, "redes", ok) for s in a.social or []]
+    if a.dir and a.dir not in ("+", "-"):
+        raise SocialError("--dir is + (good news for the coin) or - (bad news)")
+    sources += [parse_onchain(x, a.chain_offline) for x in a.onchain or []]
     if not sources:
-        raise SocialError("give the sources you found: --source, --official, --vocero, --economist or --social")
+        raise SocialError("give the sources you found: --source, --official, --vocero, --economist, --social "
+                          "or --onchain")
     now = parse_now(a.now)
     first = parse_when(a.first_seen, "--first-seen") if a.first_seen else None
     fresh, finfo, freasons = freshness(sources, now, first)
@@ -662,6 +975,15 @@ def cmd_verify(a):
     status, reasons, stats = verdict(sources, age, a.high_impact)
     stats.update(finfo)
     stats["frescura"] = fresh
+    price = None
+    if a.dir:
+        since = parse_when(finfo["primera_nota"]) if finfo.get("primera_nota") else first
+        if since is None:
+            freasons.append("precio: sin la fecha de la primera nota no se puede medir cuánto se movió")
+        else:
+            price = price_reaction(a.coin, since, now, a.dir, a.prices)
+            freasons.append("precio (%s): %s" % (price["label"], price["text"]))
+            stats["precio"] = price
     cid = (max(c["id"] for c in log["checks"]) + 1) if log["checks"] else 1
     log["checks"].append({"id": cid, "claim": a.claim, "checked_at": now.strftime("%Y-%m-%d %H:%M"),
                           "first_seen": a.first_seen, "status": status, "freshness": fresh,
@@ -671,6 +993,8 @@ def cmd_verify(a):
     write_json(a.log, log)
     mark = {"VERIFICADA": "OK", "DUDOSA": "??", "FALSA": "XX"}[status]
     label = fresh + (" (RECICLADA)" if finfo.get("reciclada") else "")
+    if price and price["label"] in ("YA ESTÁ EN EL PRECIO", "AL REVÉS"):
+        label += "  precio: " + price["label"]
     print("[%s] %s  (#%d)  fecha: %s\n  %s" % (mark, status, cid, label, a.claim))
     for r in reasons + freasons:
         print("  - " + r)
@@ -680,20 +1004,27 @@ def cmd_verify(a):
     for s in sources:
         key = s["country"] if s["kind"] in ("medio", "estatal") else \
             {"oficial": "documento oficial", "vocero": "voceros", "economista": "economistas",
-             "redes": "X"}.get(s["kind"], "?")
+             "redes": "X", "onchain": "blockchain"}.get(s["kind"], "?")
         groups.setdefault(key, []).append(s)
     print("  Por país:")
-    for key in sorted(groups, key=lambda c: (c in ("?", "X"), c)):
+    for key in sorted(groups, key=lambda c: (c in ("?", "X"), c == "blockchain", c)):
         print("    %s" % ("fuera de la lista" if key == "?" else key))
         for s in groups[key]:
             tag = ("  (otro hecho: fecha distinta)") if s.get("other_event") else \
+                  ("  (fuentes anónimas)") if s.get("anon") else \
                   ("  (copia de %s)" % s["copy_of"]) if s["copy_of"] else \
                   ("  (tilde %s)" % s["tilde"]) if s["kind"] == "redes" else \
                   "  (medio estatal: voz del gobierno)" if s["kind"] == "estatal" else \
                   "" if s["reliable"] else "  (no cuenta)"
             when = s["when"].strftime("%d/%m/%Y") if s["when"] else "sin fecha "
             print("      %-9s %-26s %s  %s%s" % (s["stance"], s["outlet"][:26], when, s["url"][:50], tag))
-    if status == "VERIFICADA":
+    if status == "VERIFICADA" and price and price["label"] == "YA ESTÁ EN EL PRECIO":
+        print("  Es verdad, pero el precio ya se movió a favor de la noticia: no persigas el movimiento "
+              "(add-event --verification %d)." % cid)
+    elif status == "VERIFICADA" and price and price["label"] == "AL REVÉS":
+        print("  Es verdad, pero el precio va al revés de la noticia: no operes a favor de ella "
+              "(add-event --verification %d)." % cid)
+    elif status == "VERIFICADA":
         print({"NUEVA": "  Es verdad y es de hoy: se puede usar para operar y para el historial "
                         "(add-event --verification %d)." % cid,
                "RECIENTE": "  Es verdad, pero tiene más de %d horas: buena parte ya está en el precio. Usala con "
@@ -765,8 +1096,21 @@ def main(argv=None):
     p.add_argument("--social", action="append", help='an X post: "Account|url|confirma|gris" (gris/dorado/azul/ninguno)')
     p.add_argument("--list", action="store_true")
     p.add_argument("--now", help="pretend it is this UTC time")
+    p.add_argument("--onchain", action="append",
+                   help='a transaction: "btc|TXID|4259" or "eth|0xHASH|503.9 USDT" (amount optional)')
+    p.add_argument("--chain-offline", help="a folder of saved explorer answers (TXID.json) instead of the network")
+    p.add_argument("--dir", help="+ good news for the coin, - bad news: measures if it is already in the price")
+    p.add_argument("--coin", default="BTC", help="the coin whose price reaction is measured (default BTC)")
+    p.add_argument("--prices", help="a saved Yahoo chart file instead of the network")
     p.add_argument("--high-impact", action="store_true",
                    help="news that can move the market a lot: 6 confirmations, 85 %%, 2 regions, an agency")
+    p = sub.add_parser("chain")
+    p.add_argument("--blocks", type=int, default=6, help="how many recent blocks to scan for big moves")
+    p.add_argument("--min-btc", type=float, default=1000.0, help="a big move: this many BTC or more")
+    p.add_argument("--top", type=int, default=5)
+    p.add_argument("--offline", help="a folder of saved explorer answers instead of the network")
+    p.add_argument("--now", help="pretend it is this UTC time")
+    p.add_argument("--json")
     p = sub.add_parser("news")
     p.add_argument("--query", help="comma list of words (default: crypto and macro/political words)")
     p.add_argument("--days", type=int, default=3)
@@ -787,7 +1131,7 @@ def main(argv=None):
         return 1
     try:
         return {"study": cmd_study, "patterns": cmd_patterns, "calendar": cmd_calendar, "verify": cmd_verify,
-                "add-event": cmd_add_event, "news": cmd_news}[a.cmd](a)
+                "add-event": cmd_add_event, "news": cmd_news, "chain": cmd_chain}[a.cmd](a)
     except SocialError as e:
         print("social.py: %s" % e, file=sys.stderr)
         return 1
