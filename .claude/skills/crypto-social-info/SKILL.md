@@ -94,6 +94,31 @@ nunca queda VERIFICADA.
 Mostrale al usuario el veredicto, las razones y los links. Nunca inventes
 fuentes ni des una noticia por cierta sin pasar por `verify`.
 
+## Noticias de The Guardian, New York Times y BBC
+
+`news` lee los **feeds RSS** de The Guardian (sección cripto, economía y
+política de EE.UU.), The New York Times (economía, tecnología, política) y la
+BBC (economía, tecnología, mundo). Es el formato que publican para que lo lean
+programas: no hace falta clave. Solo traen los últimos días.
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/social.py" news                        # cripto y macro/política, 3 días
+python3 "${CLAUDE_SKILL_DIR}/social.py" news --query "tariff,china" --days 2
+python3 "${CLAUDE_SKILL_DIR}/social.py" news --query "stablecoin" --for-verify
+```
+
+Necesita `www.theguardian.com`, `rss.nytimes.com` y `feeds.bbci.co.uk` en la
+red del entorno; si no responden, el comando lo dice.
+
+Usalo de dos maneras:
+- **Antes de operar:** ¿hay alguna noticia cripto o política de hoy? Si la
+  hay y es importante, verificala y miralá en el historial.
+- **Para verificar:** `--for-verify` imprime cada nota como una línea
+  `--source` lista para `verify`. **Leé cada nota antes de usarla** y cambiá
+  `confirma` por `parcial`, `desmiente` o `no_dice` según lo que dice: que un
+  título coincida con las palabras buscadas no quiere decir que confirme.
+  Son tres de las 5 fuentes; las otras dos salen de tu búsqueda web.
+
 ## 2. El historial y los patrones
 
 `study` mide cada evento contra los precios reales: la semana anterior (¿el

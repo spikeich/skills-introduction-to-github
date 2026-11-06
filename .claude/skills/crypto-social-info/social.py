@@ -11,6 +11,13 @@
     python3 social.py verify --list
     python3 social.py add-event --date 2026-11-04 --country EE.UU. --scope politico --type elecciones \\
         --dir - --title "..." --src "CNBC, Yahoo Finance" --verification 3
+    python3 social.py news                           # crypto and political headlines: Guardian, NYT, BBC (RSS)
+    python3 social.py news --query "tariff,china" --days 2
+    python3 social.py news --query "stablecoin" --for-verify   # ready-made --source lines for verify
+
+News: the public RSS feeds of The Guardian (www.theguardian.com), The New York
+Times (rss.nytimes.com) and the BBC (feeds.bbci.co.uk), the format they publish
+for programs to read. No key needed. They only carry the last few days.
 
 Data: the events (events.json) and the calendar (calendar.json) live next to this
 script; --events / --calendar point elsewhere. The verification log goes to
@@ -36,6 +43,7 @@ people are a small, biased sample: the patterns are hints, not rules.
 
 import argparse
 import datetime as dt
+import email.utils
 import json
 import os
 import statistics as st
@@ -43,6 +51,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UA = "Mozilla/5.0 (compatible; crypto-social-info/1.0)"
@@ -52,6 +61,21 @@ YAHOO_PAIRS = {"HYPE": "HYPE32196-USD", "UNI": "UNI7083-USD", "SUI": "SUI20947-U
 STANCES = ("confirma", "parcial", "desmiente", "no_dice")
 KINDS = ("medio", "oficial", "vocero", "economista", "redes")
 TILDES = ("gris", "dorado", "azul", "ninguno")
+FEEDS = {
+    "The Guardian": ["https://www.theguardian.com/technology/cryptocurrencies/rss",
+                     "https://www.theguardian.com/business/rss",
+                     "https://www.theguardian.com/us-news/us-politics/rss"],
+    "The New York Times": ["https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+                           "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+                           "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml"],
+    "BBC": ["https://feeds.bbci.co.uk/news/business/rss.xml",
+            "https://feeds.bbci.co.uk/news/technology/rss.xml",
+            "https://feeds.bbci.co.uk/news/world/rss.xml"],
+}
+CRYPTO_WORDS = ("bitcoin", "crypto", "cryptocurrenc", "stablecoin", "blockchain", "ethereum", "ether ",
+                "binance", "coinbase", "digital asset", "digital currenc", "cbdc", "memecoin", "token")
+MACRO_WORDS = ("tariff", "federal reserve", "interest rate", "inflation", "sanction", "treasury",
+               "central bank", "sec ", "securities and exchange", "election", "congress", "recession")
 
 
 class SocialError(Exception):
@@ -286,6 +310,103 @@ def cmd_calendar(a):
     return 0
 
 
+# ---------------------------------------------------------------- news (RSS)
+
+def parse_feed(text, outlet):
+    """RSS 2.0 text -> [{outlet, title, url, when (naive UTC), summary}]."""
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as e:
+        raise SocialError("%s sent something that is not RSS: %s" % (outlet, e))
+    out = []
+    for it in root.iter("item"):
+        title = (it.findtext("title") or "").strip()
+        link = (it.findtext("link") or "").strip()
+        when = None
+        raw = it.findtext("pubDate")
+        if raw:
+            try:
+                d = email.utils.parsedate_to_datetime(raw)
+                when = (d.astimezone(dt.timezone.utc) if d.tzinfo else d).replace(tzinfo=None)
+            except (TypeError, ValueError):
+                when = None
+        summary = " ".join((it.findtext("description") or "").split())
+        if title and link:
+            out.append({"outlet": outlet, "title": title, "url": link, "when": when, "summary": summary})
+    return out
+
+
+def fetch_feed(url):
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/rss+xml, application/xml"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def matches(item, words):
+    text = " %s %s " % (item["title"].lower(), item["summary"].lower())
+    return [w.strip() for w in words if w in text]
+
+
+def cmd_news(a):
+    items, errors = [], []
+    if a.offline:
+        for path in a.offline:
+            outlet = os.path.basename(path).split(".")[0].replace("_", " ")
+            items += parse_feed(open(path, encoding="utf-8").read(), outlet)
+    else:
+        for outlet, urls in FEEDS.items():
+            for url in urls:
+                try:
+                    items += parse_feed(fetch_feed(url), outlet)
+                except SocialError as e:
+                    errors.append(str(e))
+                except Exception as e:
+                    errors.append("%s (%s): %s" % (outlet, urllib.parse.urlparse(url).netloc, e))
+                time.sleep(0.3)
+    words = [w.strip().lower() for w in a.query.split(",")] if a.query else list(CRYPTO_WORDS) + list(MACRO_WORDS)
+    now = parse_now(a.now)
+    seen, hits = set(), []
+    for it in items:
+        if it["url"] in seen:
+            continue
+        if it["when"] and it["when"] < now - dt.timedelta(days=a.days):
+            continue
+        m = matches(it, words)
+        if m:
+            seen.add(it["url"])
+            it["tags"] = m
+            it["kind"] = "cripto" if any(w in CRYPTO_WORDS for w in m) else "macro/política"
+            hits.append(it)
+    hits.sort(key=lambda x: x["when"] or dt.datetime.min, reverse=True)
+    print("NOTICIAS de los últimos %d días (The Guardian, The New York Times, BBC), hora Argentina" % a.days)
+    if errors:
+        for e in dict.fromkeys(errors):
+            print("  ! no se pudo leer: %s" % e)
+        if len(errors) == sum(len(u) for u in FEEDS.values()) and not a.offline:
+            print("  ! Ningún feed respondió: ¿están www.theguardian.com, rss.nytimes.com y feeds.bbci.co.uk "
+                  "habilitados en la red del entorno?")
+    if not hits:
+        print("  Nada que coincida con %s." % ", ".join(words[:8]))
+    for h in hits[:a.limit]:
+        when = (h["when"] - dt.timedelta(hours=3)).strftime("%d/%m %H:%M") if h["when"] else "  ?  "
+        if a.for_verify:
+            print('  --source "%s|%s|confirma"    # %s: %s' % (h["outlet"], h["url"], when, h["title"][:70]))
+        else:
+            print("  %s  %-18s [%s] %s\n      %s" % (when, h["outlet"], h["kind"], h["title"], h["url"]))
+    if a.for_verify and hits:
+        print("  (leé cada nota y cambiá confirma por parcial, desmiente o no_dice según lo que dice)")
+    if a.json:
+        write_json(a.json, [dict(h, when=h["when"].isoformat() if h["when"] else None) for h in hits])
+    return 0 if hits else 1
+
+
+def parse_now(text):
+    if not text:
+        return utc_now()
+    d = dt.datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
+    return d if d.tzinfo is None else (d - d.utcoffset()).replace(tzinfo=None)
+
+
 # ---------------------------------------------------------------- verification
 
 def load_reliable(path):
@@ -473,6 +594,14 @@ def main(argv=None):
     p.add_argument("--economist", action="append", help='a recognised economist: "Name, institution|url|confirma"')
     p.add_argument("--social", action="append", help='an X post: "Account|url|confirma|gris" (gris/dorado/azul/ninguno)')
     p.add_argument("--list", action="store_true")
+    p = sub.add_parser("news")
+    p.add_argument("--query", help="comma list of words (default: crypto and macro/political words)")
+    p.add_argument("--days", type=int, default=3)
+    p.add_argument("--limit", type=int, default=40)
+    p.add_argument("--for-verify", action="store_true", help="print each hit as a --source line for verify")
+    p.add_argument("--offline", action="append", help="a saved RSS file instead of the network (Outlet_Name.xml)")
+    p.add_argument("--now", help="pretend it is this UTC time")
+    p.add_argument("--json")
     p = sub.add_parser("add-event")
     for f in ("date", "country", "scope", "type", "dir", "title"):
         p.add_argument("--" + f, required=True)
@@ -485,7 +614,7 @@ def main(argv=None):
         return 1
     try:
         return {"study": cmd_study, "patterns": cmd_patterns, "calendar": cmd_calendar, "verify": cmd_verify,
-                "add-event": cmd_add_event}[a.cmd](a)
+                "add-event": cmd_add_event, "news": cmd_news}[a.cmd](a)
     except SocialError as e:
         print("social.py: %s" % e, file=sys.stderr)
         return 1
