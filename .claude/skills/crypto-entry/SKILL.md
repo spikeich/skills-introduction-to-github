@@ -22,7 +22,8 @@ Street, todos los días.
 proyecto: el resultado queda en `trader/entry.json`.
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/entry.py" check ETH                       # apertura de Wall Street, cualquier lado
+python3 "${CLAUDE_SKILL_DIR}/entry.py" check ETH                       # Wall Street, cualquier lado, 3 velas
+python3 "${CLAUDE_SKILL_DIR}/entry.py" check ETH --confirm 1            # sin esperar confirmación
 python3 "${CLAUDE_SKILL_DIR}/entry.py" check ETH --session europa --side short
 python3 "${CLAUDE_SKILL_DIR}/entry.py" check SOL --setup level --level 92.5 --side long
 python3 "${CLAUDE_SKILL_DIR}/entry.py" check ETH --write               # guarda trader/entry.json
@@ -52,6 +53,15 @@ grande del día). Lo que encuentres manda sobre lo que diga el gráfico:
 - **`level`.** La primera vela de la sesión que cierra por encima (`--side
   long`) o por debajo (`--side short`) de `--level`, por ejemplo un máximo de
   20 días que marcó `/crypto-scanner daily`.
+- **Confirmación (`--confirm N`).** Hacen falta N velas **seguidas** cerrando
+  afuera del rango (o del nivel); la entrada es el cierre de la última. **Por
+  defecto son 3 en la apertura de Wall Street** y 1 en lo demás. Probado en 59
+  días y 8 criptos: en Wall Street, con 1 vela se perdía −0,12 R por operación,
+  con 2 −0,02 R y con 3 quedaba casi en empate, porque filtra las rupturas
+  falsas. Empatar no es ganar: la confirmación evita pérdidas, no crea una
+  ventaja. Mientras espera, muestra "2 de 3 velas seguidas".
+- **La apertura de Europa** perdió con 1, 2 y 3 velas en esa misma prueba: la
+  skill lo avisa cada vez que la usás.
 - La hora del disparo es la del **cierre** de la vela (la vela de las 14:50
   cierra a las 14:55) y el precio es ese cierre.
 - **Vence** a las `--expire-hours` (6) de la apertura: más tarde, la ruptura

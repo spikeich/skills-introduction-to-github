@@ -12,6 +12,12 @@ London and Wall Street opens, 24/7.
     python3 entry.py check ETH --now "2026-11-05 15:00" --write
     python3 entry.py watch ETH --side short              # one line per closed bar, stops on a trigger
 
+Confirmation (--confirm N): the trigger needs N 5-minute closes IN A ROW outside the
+range (or the level); the entry is the Nth close. Default 3 for an opening-range break
+on Wall Street, 1 otherwise. Tested over 59 days and 8 coins: on Wall Street, 1 candle
+lost -0.12 R a trade, 2 candles -0.02 R, 3 candles about break-even; the London open lost
+with 1, 2 and 3. Break-even is not an edge: it filters false breaks, it does not make money.
+
 Setups:
   orb    opening-range break. The range is the high and low of the first
          --or-minutes (15) of the session. It triggers on the first COMPLETED
@@ -198,9 +204,15 @@ def fetch_bars(sym, offline=None):
 
 # ---------------------------------------------------------------- the rule
 
+def default_confirm(setup, session):
+    """3 closes in a row for an opening-range break on Wall Street, 1 otherwise (see the module docstring)."""
+    return 3 if setup == "orb" and session == "wallstreet" else 1
+
+
 def evaluate(bars, now, session="wallstreet", setup="orb", side="both", or_minutes=15, level=None,
-             expire_hours=6.0, day=None):
-    """-> dict with status, phase, the range, the trigger (if any) and the bars so far."""
+             expire_hours=6.0, day=None, confirm=1):
+    """-> dict with status, phase, the range, the trigger (if any) and the bars so far.
+    confirm = how many 5-minute closes in a row must be outside the level; the entry is the last one."""
     day = day or now.date()
     opn = session_open(session, day)
     rng_end = opn + datetime.timedelta(minutes=or_minutes)
@@ -209,7 +221,7 @@ def evaluate(bars, now, session="wallstreet", setup="orb", side="both", or_minut
     res = {"session": session, "date": day.isoformat(), "open_utc": hm(opn), "setup": setup, "side": side,
            "or_minutes": or_minutes, "range_ends_utc": hm(rng_end), "expires_utc": hm(expires),
            "level": level, "or_high": None, "or_low": None, "bars": done, "trigger": None,
-           "last": done[-1]["c"] if done else None}
+           "last": done[-1]["c"] if done else None, "confirm": confirm, "streak": None}
     if now < opn:
         res.update(status="waiting", phase="pre-open")
         return res
@@ -232,16 +244,23 @@ def evaluate(bars, now, session="wallstreet", setup="orb", side="both", or_minut
     else:
         up_lvl = down_lvl = level
         after = done
+    up = down = 0
     for b in after:
         close_at = EPOCH + datetime.timedelta(seconds=b["t"] + BAR)
-        if side in ("both", "long") and b["c"] > up_lvl:
+        up = up + 1 if b["c"] > up_lvl else 0
+        down = down + 1 if b["c"] < down_lvl else 0
+        if side in ("both", "long") and up >= confirm:
             res.update(status="triggered", phase="triggered",
                        trigger={"side": "long", "time": hm(close_at), "price": rnd(b["c"]), "level": up_lvl})
             return res
-        if side in ("both", "short") and b["c"] < down_lvl:
+        if side in ("both", "short") and down >= confirm:
             res.update(status="triggered", phase="triggered",
                        trigger={"side": "short", "time": hm(close_at), "price": rnd(b["c"]), "level": down_lvl})
             return res
+    if up and side in ("both", "long"):
+        res["streak"] = ("long", up)
+    elif down and side in ("both", "short"):
+        res["streak"] = ("short", down)
     if now >= expires:
         res.update(status="expired", phase="expired")
     else:
@@ -257,7 +276,7 @@ def entry_doc(sym, res, now):
         "setup": res["setup"], "opening_range": {"minutes": res["or_minutes"], "high": res["or_high"],
                                                  "low": res["or_low"]},
         "level": res["level"], "side": {"long": "buy", "short": "sell"}.get(t.get("side")),
-        "entry": t.get("price"), "entry_time": t.get("time"), "interval": "5m",
+        "entry": t.get("price"), "entry_time": t.get("time"), "interval": "5m", "confirm": res["confirm"],
     }
 
 
@@ -265,6 +284,9 @@ def describe(sym, res):
     p = res
     head = "%s  %s %s, sesión %s (abre %s UTC)" % (sym, p["setup"].upper(), p["date"], p["session"], p["open_utc"])
     lines = [head]
+    if p["session"] == "europa" and p["setup"] == "orb":
+        lines.append("  OJO: en 59 días (8 criptos) la ruptura de la apertura de Europa perdió con 1, 2 y 3 velas "
+                     "de confirmación. Usala con cuidado.")
     if p["setup"] == "orb" and p["or_high"] is not None:
         lines.append("  Rango de apertura (%d min, hasta %s UTC): máximo %g, mínimo %g"
                      % (p["or_minutes"], p["range_ends_utc"], p["or_high"], p["or_low"]))
@@ -273,17 +295,23 @@ def describe(sym, res):
     st = p["status"]
     if st == "triggered":
         t = p["trigger"]
-        lines.append("  DISPARÓ %s: la vela que cerró a las %s UTC cerró en %g, %s de %g."
+        lines.append("  DISPARÓ %s: la vela que cerró a las %s UTC cerró en %g, %s de %g%s."
                      % ("LARGO" if t["side"] == "long" else "CORTO", t["time"], t["price"],
-                        "encima" if t["side"] == "long" else "debajo", t["level"]))
+                        "encima" if t["side"] == "long" else "debajo", t["level"],
+                        " (%d velas seguidas afuera)" % p["confirm"] if p["confirm"] > 1 else ""))
         lines.append("  Siguiente: /crypto-exit arma el stop y el objetivo antes de entrar.")
     elif p["phase"] == "pre-open":
         lines.append("  ESPERANDO: la sesión todavía no abrió.")
     elif p["phase"] == "forming":
         lines.append("  ESPERANDO: el rango se está formando hasta las %s UTC." % p["range_ends_utc"])
+    elif st == "waiting" and p.get("streak"):
+        sd, k = p["streak"]
+        lines.append("  ESPERANDO CONFIRMACIÓN: %d de %d velas seguidas cerraron %s del rango. Último cierre %g."
+                     % (k, p["confirm"], "arriba" if sd == "long" else "abajo", p["last"]))
     elif st == "waiting":
-        lines.append("  ESPERANDO: ninguna vela cerró afuera todavía. Último cierre %g. Vence %s UTC."
-                     % (p["last"], p["expires_utc"]))
+        lines.append("  ESPERANDO: ninguna vela cerró afuera todavía%s. Último cierre %g. Vence %s UTC."
+                     % ((" (hacen falta %d seguidas)" % p["confirm"]) if p["confirm"] > 1 else "",
+                        p["last"], p["expires_utc"]))
     elif st == "expired":
         lines.append("  VENCIDO: no disparó antes de las %s UTC. No hay entrada hoy para esta regla." % p["expires_utc"])
     else:
@@ -303,8 +331,9 @@ def write_json(path, doc):
 
 
 def _eval(a, now, bars):
+    confirm = a.confirm if a.confirm else default_confirm(a.setup, a.session)
     return evaluate(bars, now, a.session, a.setup, a.side, a.or_minutes, a.level, a.expire_hours,
-                    datetime.date.fromisoformat(a.date) if a.date else None)
+                    datetime.date.fromisoformat(a.date) if a.date else None, confirm)
 
 
 def _check_args(a):
@@ -314,6 +343,8 @@ def _check_args(a):
         raise EntryError("--setup level needs --side long (close above) or --side short (close below)")
     if a.or_minutes % 5 or a.or_minutes < 5:
         raise EntryError("--or-minutes must be a multiple of 5")
+    if a.confirm is not None and not 1 <= a.confirm <= 6:
+        raise EntryError("--confirm must be between 1 and 6 candles")
 
 
 def cmd_check(a):
@@ -382,6 +413,8 @@ def main(argv=None):
         p.add_argument("--or-minutes", type=int, default=15)
         p.add_argument("--level", type=float)
         p.add_argument("--expire-hours", type=float, default=6.0)
+        p.add_argument("--confirm", type=int, help="closes in a row outside the level (default: 3 for an orb on "
+                                                    "wallstreet, 1 otherwise)")
         p.add_argument("--date", help="the session's UTC date (default today)")
 
     p = sub.add_parser("check", help="where the setup stands right now")

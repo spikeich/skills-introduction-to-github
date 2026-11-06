@@ -270,7 +270,7 @@ def gather(a):
         return {"symbol": yahoo_symbol(a.symbol), "side": a.side, "entry": a.entry,
                 "entry_time": a.entry_time, "date": a.date or datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
                 "session": a.session or "wallstreet", "setup": "orb" if a.or_high is not None else "level",
-                "or_high": a.or_high, "or_low": a.or_low, "or_minutes": a.or_minutes}
+                "or_high": a.or_high, "or_low": a.or_low, "or_minutes": a.or_minutes, "confirm": 1}
     if not os.path.exists(a.from_file):
         raise PlanError("no %s: run /crypto-entry first, or pass --symbol --side --entry" % a.from_file)
     e = read_json(a.from_file)
@@ -284,7 +284,8 @@ def gather(a):
     return {"symbol": e["symbol"], "side": side, "entry": a.entry if a.entry is not None else e["entry"],
             "entry_time": a.entry_time or e.get("entry_time"), "date": e.get("date"),
             "session": a.session or e.get("session") or "wallstreet", "setup": e.get("setup") or "orb",
-            "or_high": orng.get("high"), "or_low": orng.get("low"), "or_minutes": orng.get("minutes") or 15}
+            "or_high": orng.get("high"), "or_low": orng.get("low"), "or_minutes": orng.get("minutes") or 15,
+            "confirm": e.get("confirm") or 1}
 
 
 def build_plan(a):
@@ -318,7 +319,7 @@ def build_plan(a):
         "net_r": r["net_r"], "risk_per_coin": r["risk"], "risk_pct": r["risk_pct"],
         "reward_pct": r["reward_pct"], "opening_range": {"minutes": f["or_minutes"], "high": f["or_high"],
                                                         "low": f["or_low"]},
-        "flat_by": flat_by, "interval": "5m",
+        "flat_by": flat_by, "interval": "5m", "confirm": f["confirm"],
     }
     if atr is not None:
         plan["atr"] = {"value": round(atr, 10), "bars": atr_n, "k": stop_p}

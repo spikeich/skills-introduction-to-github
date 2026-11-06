@@ -552,7 +552,9 @@ def history_replay(sessions, rule, last, side="buy"):
     trades = []
     for d, D in sessions:
         oh, ol = opening_range(D, n)
-        kk = next((i for i in range(n, last + 1) if (D[i]["c"] > oh if long else D[i]["c"] < ol)), None)
+        need = rule.get("confirm", 1)
+        out = lambda i: D[i]["c"] > oh if long else D[i]["c"] < ol
+        kk = next((i for i in range(n + need - 1, last + 1) if all(out(j) for j in range(i - need + 1, i + 1))), None)
         if kk is None:
             continue
         e = rnd(D[kk]["c"])
@@ -685,7 +687,7 @@ def normalize_plan(raw, src="flags"):
         "target_r": round(((target - entry) if long else (entry - target)) / risk, 2),
         "opening_range": dict(orng, minutes=or_min) if isinstance(orng, dict) else {"minutes": or_min},
         "stop_rule": str(raw.get("stop_rule") or "auto"), "interval": "5m",
-        "flat_by": raw.get("flat_by"), "from": src,
+        "flat_by": raw.get("flat_by"), "from": src, "confirm": int(raw.get("confirm") or 1),
     }
 
 
@@ -699,7 +701,7 @@ def resolve_rule(plan, entry_day):
     long = plan["side"] == "buy"
     n = plan["opening_range"]["minutes"] // 5
     rule = {"setup": "orb", "or_minutes": plan["opening_range"]["minutes"], "stop_rule": plan["stop_rule"],
-            "target_r": plan["target_r"],
+            "target_r": plan["target_r"], "confirm": plan.get("confirm", 1),
             "stop_pct": round(100.0 * plan["risk_per_share"] / plan["entry"], 4)}
     far = "or_low" if long else "or_high"
     if rule["stop_rule"] == "auto":
@@ -892,10 +894,11 @@ def report(doc):
                       "or_high": "opening-range high"}.get(ru["stop_rule"],
                                                            "%g %% from the entry" % ru.get("stop_pct", 0))
         if h["triggered"]:
-            lines.append("History: the same rule (%d-min opening range, stop at the %s, %gR target) on each of "
+            lines.append("History: the same rule (%d-min opening range%s, stop at the %s, %gR target) on each of "
                          "those %d real sessions fired %d times: %d target, %d stop, %d neither. Average R %+.3f."
-                         % (ru["or_minutes"], stop_words, ru["target_r"], h["sessions"], h["triggered"],
-                            h["target"], h["stop"], h["close"], h["avg_R"]))
+                         % (ru["or_minutes"], (", %d closes in a row outside" % ru["confirm"])
+                            if ru.get("confirm", 1) > 1 else "", stop_words, ru["target_r"], h["sessions"],
+                            h["triggered"], h["target"], h["stop"], h["close"], h["avg_R"]))
         else:
             lines.append("History: the same rule never fired in those %d sessions." % h["sessions"])
     else:
