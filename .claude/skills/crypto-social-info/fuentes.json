@@ -1,0 +1,15 @@
+{
+ "note": "Fuentes confiables para verificar noticias. Solo cuentan para las 5 confirmaciones los medios de esta lista, los voceros oficiales de un gobierno, regulador o banco central (con nombre y cargo) y los economistas reconocidos (con nombre e institución). Los medios cripto especializados se pueden citar pero no cuentan. Editá la lista para agregar o sacar medios.",
+ "medios": {
+  "agencias": ["Reuters", "Associated Press", "AP", "AFP", "Bloomberg", "Dow Jones", "Xinhua", "Kyodo", "EFE", "ANSA", "dpa", "Yonhap", "Télam"],
+  "economia_y_finanzas": ["Financial Times", "The Wall Street Journal", "WSJ", "The Economist", "CNBC", "Barron's", "Forbes", "Fortune", "MarketWatch", "Business Insider", "Yahoo Finance", "Nikkei", "Handelsblatt", "Les Echos", "Expansión", "Ámbito", "El Cronista", "Caixin", "Bloomberg Línea"],
+  "diarios_generales": ["The New York Times", "The Washington Post", "The Guardian", "BBC", "CNN", "NPR", "Politico", "Axios", "Le Monde", "El País", "El Mundo", "Corriere della Sera", "Der Spiegel", "Süddeutsche Zeitung", "Frankfurter Allgemeine", "South China Morning Post", "The Japan Times", "Asahi", "The Times of India", "The Hindu", "Clarín", "La Nación", "Infobae", "Folha de S.Paulo", "O Globo", "Al Jazeera"]
+ },
+ "no_cuentan": ["CoinDesk", "The Block", "Decrypt", "Cointelegraph", "crypto.news", "CryptoSlate", "Bitcoin Magazine", "FXStreet", "Analytics Insight", "U.Today", "Benzinga", "blogs", "foros", "Telegram", "YouTube", "TikTok"],
+ "x_tildes": {
+  "gris": "gobiernos, organismos y funcionarios: sirve como origen, no como confirmación",
+  "dorado": "organizaciones verificadas (medios, empresas): sirve como origen, no como confirmación",
+  "azul": "tilde pago, cualquiera lo compra: se descarta",
+  "ninguno": "cuenta sin verificar: se descarta"
+ }
+}
