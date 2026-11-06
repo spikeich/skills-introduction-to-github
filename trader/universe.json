@@ -1,0 +1,209 @@
+{
+ "created_by": "crypto-scanner universe",
+ "created_at": "2026-11-06T00:46:12Z",
+ "coins": [
+  {
+   "sym": "BTC",
+   "name": "Bitcoin",
+   "volume": 44138367536,
+   "rank": 1,
+   "yahoo": "BTC-USD"
+  },
+  {
+   "sym": "ETH",
+   "name": "Ethereum",
+   "volume": 17450713311,
+   "rank": 2,
+   "yahoo": "ETH-USD"
+  },
+  {
+   "sym": "SOL",
+   "name": "Solana",
+   "volume": 4623808725,
+   "rank": 7,
+   "yahoo": "SOL-USD"
+  },
+  {
+   "sym": "XRP",
+   "name": "XRP",
+   "volume": 2110009270,
+   "rank": 5,
+   "yahoo": "XRP-USD"
+  },
+  {
+   "sym": "HYPE",
+   "name": "Hyperliquid",
+   "volume": 1406410891,
+   "rank": 11,
+   "yahoo": "HYPE32196-USD"
+  },
+  {
+   "sym": "ZEC",
+   "name": "Zcash",
+   "volume": 1264701468,
+   "rank": 10,
+   "yahoo": "ZEC-USD"
+  },
+  {
+   "sym": "BNB",
+   "name": "BNB",
+   "volume": 1124557994,
+   "rank": 4,
+   "yahoo": "BNB-USD"
+  },
+  {
+   "sym": "UNI",
+   "name": "Uniswap",
+   "volume": 842923762,
+   "rank": 25,
+   "yahoo": "UNI7083-USD"
+  },
+  {
+   "sym": "DOGE",
+   "name": "Dogecoin",
+   "volume": 741154668,
+   "rank": 13,
+   "yahoo": "DOGE-USD"
+  },
+  {
+   "sym": "NEAR",
+   "name": "NEAR Protocol",
+   "volume": 615148812,
+   "rank": 21,
+   "yahoo": "NEAR-USD"
+  },
+  {
+   "sym": "SUI",
+   "name": "Sui",
+   "volume": 515028946,
+   "rank": 30,
+   "yahoo": "SUI20947-USD"
+  },
+  {
+   "sym": "PEPE",
+   "name": "Pepe",
+   "volume": 446136100,
+   "rank": 45,
+   "yahoo": "PEPE24478-USD"
+  },
+  {
+   "sym": "TRX",
+   "name": "TRON",
+   "volume": 417000078,
+   "rank": 8,
+   "yahoo": "TRX-USD"
+  },
+  {
+   "sym": "ENA",
+   "name": "Ethena",
+   "volume": 376817580,
+   "rank": 43,
+   "yahoo": "ENA-USD"
+  },
+  {
+   "sym": "LINK",
+   "name": "Chainlink",
+   "volume": 369308882,
+   "rank": 17,
+   "yahoo": "LINK-USD"
+  },
+  {
+   "sym": "TRUMP",
+   "name": "Official Trump",
+   "volume": 338684837,
+   "rank": 123,
+   "yahoo": "TRUMP35336-USD"
+  },
+  {
+   "sym": "ADA",
+   "name": "Cardano",
+   "volume": 329766583,
+   "rank": 18,
+   "yahoo": "ADA-USD"
+  },
+  {
+   "sym": "AAVE",
+   "name": "Aave",
+   "volume": 281334209,
+   "rank": 46,
+   "yahoo": "AAVE-USD"
+  },
+  {
+   "sym": "LTC",
+   "name": "Litecoin",
+   "volume": 256360105,
+   "rank": 26,
+   "yahoo": "LTC-USD"
+  },
+  {
+   "sym": "BCH",
+   "name": "Bitcoin Cash",
+   "volume": 237849351,
+   "rank": 19,
+   "yahoo": "BCH-USD"
+  },
+  {
+   "sym": "WLD",
+   "name": "Worldcoin",
+   "volume": 232122261,
+   "rank": 66,
+   "yahoo": "WLD-USD"
+  },
+  {
+   "sym": "AVAX",
+   "name": "Avalanche",
+   "volume": 227899871,
+   "rank": 28,
+   "yahoo": "AVAX-USD"
+  },
+  {
+   "sym": "RUNE",
+   "name": "THORChain",
+   "volume": 208573118,
+   "rank": 167,
+   "yahoo": "RUNE-USD"
+  },
+  {
+   "sym": "XLM",
+   "name": "Stellar",
+   "volume": 202013554,
+   "rank": 20,
+   "yahoo": "XLM-USD"
+  },
+  {
+   "sym": "ONDO",
+   "name": "Ondo",
+   "volume": 186734575,
+   "rank": 52,
+   "yahoo": "ONDO-USD"
+  },
+  {
+   "sym": "INJ",
+   "name": "Injective",
+   "volume": 166955108,
+   "rank": 81,
+   "yahoo": "INJ-USD"
+  },
+  {
+   "sym": "ARB",
+   "name": "Arbitrum",
+   "volume": 157869141,
+   "rank": 70,
+   "yahoo": "ARB-USD"
+  },
+  {
+   "sym": "PUMP",
+   "name": "Pump.fun",
+   "volume": 156693423,
+   "rank": 53,
+   "yahoo": "PUMP36507-USD"
+  },
+  {
+   "sym": "XMR",
+   "name": "Monero",
+   "volume": 156548912,
+   "rank": 12,
+   "yahoo": "XMR-USD"
+  }
+ ]
+}
