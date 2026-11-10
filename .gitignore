@@ -36,7 +36,6 @@
 ehthumbs.db
 Thumbs.db
 
-# Python caches and the skills' working files
+# Python caches
 __pycache__/
 *.pyc
-trader/
