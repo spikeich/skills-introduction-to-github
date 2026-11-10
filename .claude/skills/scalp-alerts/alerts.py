@@ -27,16 +27,19 @@ From a plan (scalp-exit's trader/plan.json):
   A price that runs to the stop or the target before it ever reached the
   entry fires "missed": the limit order never filled, cancel it.
 
-Prices: Yahoo's 1-minute chart (query2.finance.yahoo.com): every completed
+Prices: Binance's 1-minute candles first (data-api.binance.vision), then Yahoo's
+1-minute chart (query2.finance.yahoo.com); --source picks one. Every completed
 minute's high, low and close, each judged once and in order, so a wick between
 two looks still counts and a look that fails is caught up by the next one. Free and unofficial: it can lag a minute or two behind the exchange.
 Exit codes: 0 when the watch ended on an alert, 1 otherwise.
 """
 
 import argparse
+import concurrent.futures
 import datetime
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -86,11 +89,137 @@ def yahoo_symbol(sym):
     return YAHOO_PAIRS.get(base, base + "-USD")
 
 
+# ---------------------------------------------------------------- price sources
+# Candles come from Binance first (the exchange itself: its own prices and real volume),
+# then from Yahoo. Binance's answer is turned into the shape of Yahoo's chart JSON, which
+# is what the rest of this script reads. --source picks one; SOURCE_USED says who answered.
+BINANCE_HOSTS = ("https://data-api.binance.vision", "https://api.binance.com")
+BINANCE_MAX = 1000                  # candles per request
+BINANCE_STEP = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86400}
+SOURCE = "auto"                     # auto (Binance, then Yahoo) | binance | yahoo
+SOURCE_USED = None
+
+
+def binance_pair(sym):
+    """BTC-USD -> BTCUSDT, UNI7083-USD -> UNIUSDT (Yahoo's number is not part of the ticker).
+    None for anything that is not a coin priced in USD. trader/universe.json can name the
+    pair, or say null when the scanner found that Binance's ticker is another coin."""
+    s = sym.strip().upper()
+    if not s.endswith("-USD"):
+        return None
+    base = re.sub(r"\d{4,}$", "", s[:-4])
+    try:
+        with open(os.path.join("trader", "universe.json"), encoding="utf-8") as fh:
+            for c in json.load(fh).get("coins", []):
+                if c.get("sym") == base and "binance" in c:
+                    return c["binance"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    return (base + "USDT") if re.fullmatch(r"[A-Z0-9]{2,12}", base) else None
+
+
+def binance_page(host, pair, interval, first_ms, last_ms):
+    url = "%s/api/v3/klines?symbol=%s&interval=%s&startTime=%d&endTime=%d&limit=%d" % (
+        host, pair, interval, first_ms, last_ms, BINANCE_MAX)
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read().decode("utf-8", "replace"))
+
+
+def binance_chart(sym, interval, start=None, end=None, bars=None, pair=None):
+    """Candles from Binance in Yahoo's chart shape, or None when Binance does not list the
+    coin or does not answer (then the caller asks Yahoo). start and end are epoch seconds;
+    without start, the last `bars` candles. pair names the Binance ticker outright.
+    Binance gives 1,000 candles a request: longer spans are asked for in parallel."""
+    pair, step = pair or binance_pair(sym), BINANCE_STEP.get(interval)
+    if not pair or not step:
+        return None
+    end = int(end or time.time())
+    start = int(start if start is not None else end - (bars or BINANCE_MAX) * step)
+    span = BINANCE_MAX * step * 1000
+    pages = [(first, min(first + span - 1, end * 1000)) for first in range(start * 1000, end * 1000 + 1, span)]
+    rows = None
+    for host in BINANCE_HOSTS:
+        try:
+            if len(pages) > 2:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+                    parts = list(pool.map(lambda p: binance_page(host, pair, interval, p[0], p[1]), pages))
+            else:
+                parts = [binance_page(host, pair, interval, p[0], p[1]) for p in pages]
+        except urllib.error.HTTPError as e:
+            if e.code == 400:
+                return None                 # Binance has no such pair
+            continue                        # 451 (blocked location), 403, 429, 5xx: try the next host
+        except (urllib.error.URLError, OSError, ValueError):
+            continue
+        rows = {int(k[0]): k for part in parts if isinstance(part, list) for k in part}
+        if rows:
+            break
+    if not rows:
+        return None
+    rows = [rows[t] for t in sorted(rows)]
+    quote = {"open": [float(k[1]) for k in rows], "high": [float(k[2]) for k in rows],
+             "low": [float(k[3]) for k in rows], "close": [float(k[4]) for k in rows],
+             "volume": [float(k[7]) for k in rows]}          # k[7]: traded value in USDT
+    return {"chart": {"result": [{"meta": {"symbol": sym.upper(), "dataGranularity": interval,
+                                           "exchangeName": "Binance", "binancePair": pair},
+                                  "timestamp": [int(k[0]) // 1000 for k in rows],
+                                  "indicators": {"quote": [quote]}}], "error": None}}
+
+
+def binance_name(doc):
+    return "Binance (%s)" % doc["chart"]["result"][0]["meta"]["binancePair"]
+
+
+# CoinGecko's ids for the coins traded most (trader/universe.json adds the rest): a third
+# source for the price right now. It has no 1- or 5-minute candles, so it cannot time a trade.
+GECKO_IDS = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "XRP": "ripple", "BNB": "binancecoin",
+             "DOGE": "dogecoin", "ADA": "cardano", "LINK": "chainlink", "LTC": "litecoin", "BCH": "bitcoin-cash",
+             "AVAX": "avalanche-2", "TRX": "tron", "ZEC": "zcash", "SUI": "sui", "HYPE": "hyperliquid",
+             "UNI": "uniswap", "NEAR": "near", "PEPE": "pepe", "WLD": "worldcoin-wld", "XLM": "stellar",
+             "XMR": "monero", "AAVE": "aave", "ARB": "arbitrum", "ENA": "ethena", "ONDO": "ondo-finance",
+             "INJ": "injective-protocol", "TRUMP": "official-trump"}
+
+
+def gecko_prices(syms):
+    """{symbol: the price CoinGecko shows now} for Yahoo-style symbols, in one request."""
+    ids = {}
+    known = {}
+    try:
+        with open(os.path.join("trader", "universe.json"), encoding="utf-8") as fh:
+            known = {c.get("sym"): c.get("id") for c in json.load(fh).get("coins", []) if c.get("id")}
+    except (OSError, ValueError, AttributeError):
+        pass
+    for sym in syms:
+        base = re.sub(r"\d{4,}$", "", sym.upper().replace("-USD", ""))
+        cid = known.get(base) or GECKO_IDS.get(base)
+        if cid:
+            ids[sym] = cid
+    if not ids:
+        return {}
+    url = "https://api.coingecko.com/api/v3/simple/price?ids=%s&vs_currencies=usd" % ",".join(
+        urllib.parse.quote(i) for i in sorted(set(ids.values())))
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            doc = json.loads(r.read().decode("utf-8", "replace"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return {}
+    return {sym: (doc.get(cid) or {}).get("usd") for sym, cid in ids.items()}
+
+
 def minute_bars(sym, since_ts):
     """[(t, high, low, close)] of completed 1-minute bars since since_ts."""
+    global SOURCE_USED
     path = "/v8/finance/chart/%s?range=1d&interval=1m" % urllib.parse.quote(sym)
     doc = None
-    for host in HOSTS:
+    if SOURCE in ("auto", "binance"):
+        doc = binance_chart(sym, "1m", start=since_ts - 60)
+        if doc:
+            SOURCE_USED = binance_name(doc)
+        elif SOURCE == "binance":
+            raise AlertError("Binance has no candles for %s, or did not answer" % sym)
+    for host in (() if doc else HOSTS):
         try:
             req = urllib.request.Request(host + path, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=20) as r:
@@ -105,6 +234,8 @@ def minute_bars(sym, since_ts):
             raise AlertError("could not reach Yahoo: %s" % e)
     if not doc:
         raise AlertError("Yahoo did not answer")
+    if "binancePair" not in ((doc.get("chart") or {}).get("result") or [{}])[0].get("meta", {}):
+        SOURCE_USED = "Yahoo"
     res = ((doc.get("chart") or {}).get("result") or [None])[0] or {}
     q = (res.get("indicators") or {}).get("quote", [{}])[0]
     now_ts = int(time.time())
@@ -260,20 +391,40 @@ def cmd_watch(a):
             return 0
         if now - last_beat >= datetime.timedelta(minutes=a.heartbeat):
             last_beat = now
-            say("Sigue vigilando: " + ", ".join("%s %g" % (s["symbol"], s.get("last") or 0) for s in active))
+            say("Sigue vigilando: " + ", ".join("%s %g" % (s["symbol"], s.get("last") or 0) for s in active)
+                + (" (precios de %s)" % SOURCE_USED if SOURCE_USED else ""))
         time.sleep(max(15, a.every))
     say("Corto: pasaron %g horas." % a.max_hours)
     return 0 if fired_any else 1
 
 
 def cmd_now(a):
+    global SOURCE
+    gecko = gecko_prices([yahoo_symbol(x) for x in a.symbol.split(",")]) if a.compare else {}
     for sym in a.symbol.split(","):
         y = yahoo_symbol(sym)
+        if a.compare:           # the same coin on the three sources, side by side
+            row, keep = [], SOURCE
+            for name in ("binance", "yahoo"):
+                SOURCE = name
+                try:
+                    bars = minute_bars(y, int(time.time()) - 600)
+                    row.append((name.capitalize(), bars[-1][3] if bars else None))
+                except AlertError:
+                    row.append((name.capitalize(), None))
+            SOURCE = keep
+            row.append(("CoinGecko", gecko.get(y)))
+            have = [p for _, p in row if p]
+            gap = (max(have) / min(have) - 1) * 100 if len(have) > 1 else 0.0
+            print("%-12s %s  (diferencia máxima %.2f %%)" % (
+                y, " | ".join("%s %s" % (n, ("%g" % p) if p else "sin dato") for n, p in row), gap))
+            time.sleep(0.5)
+            continue
         bars = minute_bars(y, int(time.time()) - 600)
         if bars:
             t, h, l, c = bars[-1]
-            print("%-12s %g  (minuto de las %s UTC)" % (y, c, datetime.datetime.fromtimestamp(
-                t, datetime.timezone.utc).strftime("%H:%M")))
+            print("%-12s %g  (minuto de las %s UTC, %s)" % (y, c, datetime.datetime.fromtimestamp(
+                t, datetime.timezone.utc).strftime("%H:%M"), SOURCE_USED))
         else:
             print("%-12s sin datos recientes" % y)
         time.sleep(0.5)
@@ -293,10 +444,17 @@ def main(argv=None):
     p.add_argument("--max-hours", type=float, default=1)
     p = sub.add_parser("now", help="one look at the prices")
     p.add_argument("--symbol", required=True, help="comma list: ETH,BTC,SOL")
+    p.add_argument("--compare", action="store_true",
+                   help="show the price on Binance, Yahoo and CoinGecko side by side")
+    for p in sub.choices.values():
+        p.add_argument("--source", default="auto", choices=["auto", "binance", "yahoo"],
+                       help="where the prices come from: Binance first and Yahoo as a fallback (auto), or one")
     a = ap.parse_args(argv)
     if not a.cmd:
         ap.print_help()
         return 1
+    global SOURCE
+    SOURCE = a.source
     try:
         return {"watch": cmd_watch, "now": cmd_now}[a.cmd](a)
     except AlertError as e:

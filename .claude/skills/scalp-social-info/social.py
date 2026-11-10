@@ -75,10 +75,12 @@ people are a small, biased sample: the patterns are hints, not rules.
 """
 
 import argparse
+import concurrent.futures
 import datetime as dt
 import email.utils
 import json
 import os
+import re
 import statistics as st
 import sys
 import time
@@ -740,7 +742,96 @@ def cmd_chain(a):
 
 # ---------------------------------------------------------------- price reaction
 
+# ---------------------------------------------------------------- price sources
+# Candles come from Binance first (the exchange itself: its own prices and real volume),
+# then from Yahoo. Binance's answer is turned into the shape of Yahoo's chart JSON, which
+# is what the rest of this script reads. --source picks one; SOURCE_USED says who answered.
+BINANCE_HOSTS = ("https://data-api.binance.vision", "https://api.binance.com")
+BINANCE_MAX = 1000                  # candles per request
+BINANCE_STEP = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86400}
+SOURCE = "auto"                     # auto (Binance, then Yahoo) | binance | yahoo
+SOURCE_USED = None
+
+
+def binance_pair(sym):
+    """BTC-USD -> BTCUSDT, UNI7083-USD -> UNIUSDT (Yahoo's number is not part of the ticker).
+    None for anything that is not a coin priced in USD. trader/universe.json can name the
+    pair, or say null when the scanner found that Binance's ticker is another coin."""
+    s = sym.strip().upper()
+    if not s.endswith("-USD"):
+        return None
+    base = re.sub(r"\d{4,}$", "", s[:-4])
+    try:
+        with open(os.path.join("trader", "universe.json"), encoding="utf-8") as fh:
+            for c in json.load(fh).get("coins", []):
+                if c.get("sym") == base and "binance" in c:
+                    return c["binance"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    return (base + "USDT") if re.fullmatch(r"[A-Z0-9]{2,12}", base) else None
+
+
+def binance_page(host, pair, interval, first_ms, last_ms):
+    url = "%s/api/v3/klines?symbol=%s&interval=%s&startTime=%d&endTime=%d&limit=%d" % (
+        host, pair, interval, first_ms, last_ms, BINANCE_MAX)
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read().decode("utf-8", "replace"))
+
+
+def binance_chart(sym, interval, start=None, end=None, bars=None, pair=None):
+    """Candles from Binance in Yahoo's chart shape, or None when Binance does not list the
+    coin or does not answer (then the caller asks Yahoo). start and end are epoch seconds;
+    without start, the last `bars` candles. pair names the Binance ticker outright.
+    Binance gives 1,000 candles a request: longer spans are asked for in parallel."""
+    pair, step = pair or binance_pair(sym), BINANCE_STEP.get(interval)
+    if not pair or not step:
+        return None
+    end = int(end or time.time())
+    start = int(start if start is not None else end - (bars or BINANCE_MAX) * step)
+    span = BINANCE_MAX * step * 1000
+    pages = [(first, min(first + span - 1, end * 1000)) for first in range(start * 1000, end * 1000 + 1, span)]
+    rows = None
+    for host in BINANCE_HOSTS:
+        try:
+            if len(pages) > 2:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+                    parts = list(pool.map(lambda p: binance_page(host, pair, interval, p[0], p[1]), pages))
+            else:
+                parts = [binance_page(host, pair, interval, p[0], p[1]) for p in pages]
+        except urllib.error.HTTPError as e:
+            if e.code == 400:
+                return None                 # Binance has no such pair
+            continue                        # 451 (blocked location), 403, 429, 5xx: try the next host
+        except (urllib.error.URLError, OSError, ValueError):
+            continue
+        rows = {int(k[0]): k for part in parts if isinstance(part, list) for k in part}
+        if rows:
+            break
+    if not rows:
+        return None
+    rows = [rows[t] for t in sorted(rows)]
+    quote = {"open": [float(k[1]) for k in rows], "high": [float(k[2]) for k in rows],
+             "low": [float(k[3]) for k in rows], "close": [float(k[4]) for k in rows],
+             "volume": [float(k[7]) for k in rows]}          # k[7]: traded value in USDT
+    return {"chart": {"result": [{"meta": {"symbol": sym.upper(), "dataGranularity": interval,
+                                           "exchangeName": "Binance", "binancePair": pair},
+                                  "timestamp": [int(k[0]) // 1000 for k in rows],
+                                  "indicators": {"quote": [quote]}}], "error": None}}
+
+
+def binance_name(doc):
+    return "Binance (%s)" % doc["chart"]["result"][0]["meta"]["binancePair"]
+
+
 def intraday(sym, interval, rng):
+    """Recent candles for the priced-in check: Binance first, then Yahoo."""
+    global SOURCE_USED
+    doc = binance_chart(sym, interval, bars=1440)       # 5 days of 5-minute candles, or 60 of 1-hour ones
+    if doc:
+        SOURCE_USED = binance_name(doc)
+        return doc["chart"]["result"][0]
+    SOURCE_USED = "Yahoo"
     q = urllib.parse.urlencode({"interval": interval, "range": rng})
     url = "https://query2.finance.yahoo.com/v8/finance/chart/%s?%s" % (urllib.parse.quote(sym), q)
     for attempt in range(2):

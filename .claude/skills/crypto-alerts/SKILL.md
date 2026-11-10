@@ -25,7 +25,10 @@ python3 "${CLAUDE_SKILL_DIR}/alerts.py" watch                             # sigu
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" watch --symbol BTC --above 78000 --below 74000 --plan none
 ```
 
-Necesita `query2.finance.yahoo.com` (y `query1`) en la red.
+**Precios:** primero Binance (`data-api.binance.vision`, y `api.binance.com` donde no esté bloqueado): son los precios de la exchange misma. Si Binance no tiene la cripto o no responde, Yahoo (`query2.finance.yahoo.com` y `query1`). `--source binance` o `--source yahoo` fuerza una. La salida dice de dónde salieron ("Precios de Binance (BTCUSDT)"). Binance cotiza en USDT y suele quedar un 0,1 % arriba de Yahoo y CoinGecko, que cotizan en dólares: no mezcles fuentes dentro de una misma operación.
+
+`now --compare` muestra la misma cripto en las tres fuentes, lado a lado: Binance, Yahoo y CoinGecko, con la
+diferencia máxima entre ellas. CoinGecko sirve para el precio de ahora; no tiene velas de 1 ni de 5 minutos.
 
 ## Qué avisa
 

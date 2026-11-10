@@ -20,7 +20,7 @@ python3 "${CLAUDE_SKILL_DIR}/paper.py" --capital 3000                  # simula 
 python3 "${CLAUDE_SKILL_DIR}/paper.py" --capital 3000 --offline BTC-1m.json   # sobre velas guardadas
 ```
 
-`scan.py` necesita `api.coingecko.com`; `paper.py`, `query2.finance.yahoo.com`.
+`scan.py` lee CoinGecko (`api.coingecko.com`). `paper.py` lee las velas de 1 minuto. **Precios:** primero Binance (`data-api.binance.vision`, y `api.binance.com` donde no esté bloqueado): son los precios de la exchange misma. Si Binance no tiene la cripto o no responde, Yahoo (`query2.finance.yahoo.com` y `query1`). `--source binance` o `--source yahoo` fuerza una. La salida dice de dónde salieron ("Precios de Binance (BTCUSDT)"). Binance cotiza en USDT y suele quedar un 0,1 % arriba de Yahoo y CoinGecko, que cotizan en dólares: no mezcles fuentes dentro de una misma operación.
 
 ## Antes de empezar: primero `/scalp-social-info`
 

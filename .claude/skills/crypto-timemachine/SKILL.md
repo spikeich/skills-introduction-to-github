@@ -44,8 +44,7 @@ Otras opciones: `--date YYYY-MM-DD` (por defecto hoy, UTC), `--session`
 defecto 3 en Wall Street y 1 en lo demás, igual que `/crypto-entry`. Con
 `trader/plan.json` lo lee del plan.
 
-Necesita `query2.finance.yahoo.com` (y `query1` de respaldo) en la red del
-entorno.
+**Precios:** primero Binance (`data-api.binance.vision`, y `api.binance.com` donde no esté bloqueado): son los precios de la exchange misma. Si Binance no tiene la cripto o no responde, Yahoo (`query2.finance.yahoo.com` y `query1`). `--source binance` o `--source yahoo` fuerza una. La salida dice de dónde salieron ("Precios de Binance (BTCUSDT)"). Binance cotiza en USDT y suele quedar un 0,1 % arriba de Yahoo y CoinGecko, que cotizan en dólares: no mezcles fuentes dentro de una misma operación. Los 60 días de velas de 5 minutos se piden a Binance en paralelo (unos 8 segundos).
 
 ## Qué cambia respecto del original (acciones)
 

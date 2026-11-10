@@ -30,7 +30,7 @@ python3 "${CLAUDE_SKILL_DIR}/entry.py" check ETH --write               # guarda 
 python3 "${CLAUDE_SKILL_DIR}/entry.py" watch ETH --side short          # vela por vela hasta que dispare
 ```
 
-Necesita `query2.finance.yahoo.com` (y `query1`) en la red del entorno.
+**Precios:** primero Binance (`data-api.binance.vision`, y `api.binance.com` donde no esté bloqueado): son los precios de la exchange misma. Si Binance no tiene la cripto o no responde, Yahoo (`query2.finance.yahoo.com` y `query1`). `--source binance` o `--source yahoo` fuerza una. La salida dice de dónde salieron ("Precios de Binance (BTCUSDT)"). Binance cotiza en USDT y suele quedar un 0,1 % arriba de Yahoo y CoinGecko, que cotizan en dólares: no mezcles fuentes dentro de una misma operación.
 
 ## Antes de empezar: primero `/crypto-social-info`
 

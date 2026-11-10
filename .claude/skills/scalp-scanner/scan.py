@@ -43,6 +43,7 @@ Exit code 0 when the scan found something, 1 when it did not or could not run.
 """
 
 import argparse
+import concurrent.futures
 import datetime
 import json
 import os
@@ -91,6 +92,7 @@ DEFAULT_COINS = ("BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA", "LINK", "LTC"
 PRICE_BAND = (0.5, 2.0)     # Yahoo's last close over CoinGecko's price: outside this, it is another coin
 STALE_HOURS = 24            # a saved universe older than this gets a warning
 OFFLINE = None              # a folder of saved Yahoo charts (<PAIR>.json) instead of the network
+SOURCE_COUNT = {}           # how many coins each source answered for, in this run
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -150,6 +152,88 @@ def parse_hhmm(text):
 
 
 # ---------------------------------------------------------------- network
+
+# ---------------------------------------------------------------- price sources
+# Candles come from Binance first (the exchange itself: its own prices and real volume),
+# then from Yahoo. Binance's answer is turned into the shape of Yahoo's chart JSON, which
+# is what the rest of this script reads. --source picks one; SOURCE_USED says who answered.
+BINANCE_HOSTS = ("https://data-api.binance.vision", "https://api.binance.com")
+BINANCE_MAX = 1000                  # candles per request
+BINANCE_STEP = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86400}
+SOURCE = "auto"                     # auto (Binance, then Yahoo) | binance | yahoo
+SOURCE_USED = None
+
+
+def binance_pair(sym):
+    """BTC-USD -> BTCUSDT, UNI7083-USD -> UNIUSDT (Yahoo's number is not part of the ticker).
+    None for anything that is not a coin priced in USD. trader/universe.json can name the
+    pair, or say null when the scanner found that Binance's ticker is another coin."""
+    s = sym.strip().upper()
+    if not s.endswith("-USD"):
+        return None
+    base = re.sub(r"\d{4,}$", "", s[:-4])
+    try:
+        with open(os.path.join("trader", "universe.json"), encoding="utf-8") as fh:
+            for c in json.load(fh).get("coins", []):
+                if c.get("sym") == base and "binance" in c:
+                    return c["binance"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    return (base + "USDT") if re.fullmatch(r"[A-Z0-9]{2,12}", base) else None
+
+
+def binance_page(host, pair, interval, first_ms, last_ms):
+    url = "%s/api/v3/klines?symbol=%s&interval=%s&startTime=%d&endTime=%d&limit=%d" % (
+        host, pair, interval, first_ms, last_ms, BINANCE_MAX)
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read().decode("utf-8", "replace"))
+
+
+def binance_chart(sym, interval, start=None, end=None, bars=None, pair=None):
+    """Candles from Binance in Yahoo's chart shape, or None when Binance does not list the
+    coin or does not answer (then the caller asks Yahoo). start and end are epoch seconds;
+    without start, the last `bars` candles. pair names the Binance ticker outright.
+    Binance gives 1,000 candles a request: longer spans are asked for in parallel."""
+    pair, step = pair or binance_pair(sym), BINANCE_STEP.get(interval)
+    if not pair or not step:
+        return None
+    end = int(end or time.time())
+    start = int(start if start is not None else end - (bars or BINANCE_MAX) * step)
+    span = BINANCE_MAX * step * 1000
+    pages = [(first, min(first + span - 1, end * 1000)) for first in range(start * 1000, end * 1000 + 1, span)]
+    rows = None
+    for host in BINANCE_HOSTS:
+        try:
+            if len(pages) > 2:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+                    parts = list(pool.map(lambda p: binance_page(host, pair, interval, p[0], p[1]), pages))
+            else:
+                parts = [binance_page(host, pair, interval, p[0], p[1]) for p in pages]
+        except urllib.error.HTTPError as e:
+            if e.code == 400:
+                return None                 # Binance has no such pair
+            continue                        # 451 (blocked location), 403, 429, 5xx: try the next host
+        except (urllib.error.URLError, OSError, ValueError):
+            continue
+        rows = {int(k[0]): k for part in parts if isinstance(part, list) for k in part}
+        if rows:
+            break
+    if not rows:
+        return None
+    rows = [rows[t] for t in sorted(rows)]
+    quote = {"open": [float(k[1]) for k in rows], "high": [float(k[2]) for k in rows],
+             "low": [float(k[3]) for k in rows], "close": [float(k[4]) for k in rows],
+             "volume": [float(k[7]) for k in rows]}          # k[7]: traded value in USDT
+    return {"chart": {"result": [{"meta": {"symbol": sym.upper(), "dataGranularity": interval,
+                                           "exchangeName": "Binance", "binancePair": pair},
+                                  "timestamp": [int(k[0]) // 1000 for k in rows],
+                                  "indicators": {"quote": [quote]}}], "error": None}}
+
+
+def binance_name(doc):
+    return "Binance (%s)" % doc["chart"]["result"][0]["meta"]["binancePair"]
+
 
 def http_json(url, timeout=20):
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
@@ -213,6 +297,23 @@ def spark(symbols, rng, interval):
     return out
 
 
+def daily_closes(symbols, days=100):
+    """{symbol: (timestamps, closes)} of daily closes: Binance coin by coin, Yahoo for the rest."""
+    out, rest = {}, []
+    for sym in symbols:
+        doc = binance_chart(sym, "1d", bars=days) if SOURCE in ("auto", "binance") else None
+        if doc:
+            res = doc["chart"]["result"][0]
+            out[sym] = (res["timestamp"], res["indicators"]["quote"][0]["close"])
+            SOURCE_COUNT["Binance"] = SOURCE_COUNT.get("Binance", 0) + 1
+        elif SOURCE != "binance":
+            rest.append(sym)
+    if rest:
+        out.update(spark(rest, "3mo", "1d"))
+        SOURCE_COUNT["Yahoo"] = SOURCE_COUNT.get("Yahoo", 0) + len(rest)
+    return out
+
+
 def chart(sym, rng="1d", interval="1m"):
     if OFFLINE:
         path = os.path.join(OFFLINE, sym + ".json")
@@ -221,8 +322,18 @@ def chart(sym, rng="1d", interval="1m"):
         with open(path, encoding="utf-8") as fh:
             doc = json.load(fh)
     else:
-        q = urllib.parse.urlencode({"range": rng, "interval": interval})
-        doc = yahoo("/v8/finance/chart/%s?%s" % (urllib.parse.quote(sym), q)) or {}
+        global SOURCE_USED
+        doc = binance_chart(sym, interval, bars=1440) if SOURCE in ("auto", "binance") else None
+        if doc:
+            SOURCE_USED = "Binance"
+            SOURCE_COUNT["Binance"] = SOURCE_COUNT.get("Binance", 0) + 1
+        elif SOURCE == "binance":
+            return []
+        else:
+            SOURCE_COUNT["Yahoo"] = SOURCE_COUNT.get("Yahoo", 0) + 1
+            q = urllib.parse.urlencode({"range": rng, "interval": interval})
+            doc = yahoo("/v8/finance/chart/%s?%s" % (urllib.parse.quote(sym), q)) or {}
+            SOURCE_USED = "Yahoo"
     res = ((doc.get("chart") or {}).get("result") or [None])[0]
     if not res:
         return []
@@ -269,7 +380,7 @@ def build_universe(limit, min_volume, max_rank=100):
             continue
         if max_rank and (rank is None or rank > max_rank):
             continue      # traded a lot today, but a small coin: mostly one-day speculation
-        picked.append({"sym": s.upper(), "name": c.get("name"), "volume": c.get("total_volume"),
+        picked.append({"sym": s.upper(), "id": c.get("id"), "name": c.get("name"), "volume": c.get("total_volume"),
                        "rank": rank, "price": c.get("current_price"), "yahoo": s.upper() + "-USD"})
         if len(picked) >= limit:
             break
@@ -297,6 +408,13 @@ def build_universe(limit, min_volume, max_rank=100):
         else:
             p["yahoo"] = None
             (wrong if clash else missing).append(p["sym"])
+    for p in picked:        # the same check on Binance: its ticker has to be this coin
+        doc = binance_chart(p["sym"] + "-USD", "1d", bars=2, pair=p["sym"] + "USDT")
+        closes = doc["chart"]["result"][0]["indicators"]["quote"][0]["close"] if doc else []
+        p["binance"] = (p["sym"] + "USDT") if same_coin(p["price"], closes) else None
+        if p["binance"] and not p["yahoo"] and p["sym"] in missing:
+            p["yahoo"] = p["sym"] + "-USD"      # Yahoo does not list it, Binance does: keep the coin
+            missing.remove(p["sym"])            # (a ticker that is ANOTHER coin on Yahoo stays out)
     return [p for p in picked if p["yahoo"]], missing, wrong
 
 
@@ -397,7 +515,7 @@ def find_setups(c):
 def cmd_daily(a):
     now = parse_now(a.now)
     coins = load_universe(a.universe, a)
-    data = spark([c["yahoo"] for c in coins], "3mo", "1d")
+    data = daily_closes([c["yahoo"] for c in coins])
     rows, stale = [], []
     for c in coins:
         if c["yahoo"] not in data:
@@ -429,6 +547,8 @@ def cmd_daily(a):
     for r in rows:
         tags = "; ".join("%s (%s)" % (LABEL[s][1], LABEL[s][0]) for s in r["setups"])
         print("  %-6s %12.6g (%s)  RSI %5.1f  %s" % (r["sym"], r["close"], r["close_date"][5:], r["rsi14"], tags))
+    if not OFFLINE and SOURCE_COUNT:
+        print("  Precios: %s." % ", ".join("%s (%d)" % kv for kv in sorted(SOURCE_COUNT.items())))
     print(NOTE)
     if a.write:
         write_json(a.write, {"created_by": "scalp-scanner daily", "created_at": now.isoformat() + "Z",
@@ -493,8 +613,8 @@ def cmd_orb(a):
                 bars = chart(c["yahoo"])
             except ScanError:
                 bars = []
-        if not OFFLINE:
-            time.sleep(CHART_PAUSE)
+        if not OFFLINE and SOURCE_USED != "Binance":
+            time.sleep(CHART_PAUSE)      # Yahoo answers 429 when asked too fast; Binance does not
         r = orb_scan(bars, day, open_min, cutoff, n, a.confirm)
         if r is None:
             unusable.append(c["sym"])
@@ -529,6 +649,8 @@ def cmd_orb(a):
         print("  Rompieron para los dos lados (rango sin dirección clara): %s" % ", ".join(both))
     if unusable:
         print("  Sin datos completos (falta alguna vela): %s" % ", ".join(unusable))
+    if not OFFLINE and SOURCE_COUNT:
+        print("  Precios: %s." % ", ".join("%s (%d)" % kv for kv in sorted(SOURCE_COUNT.items())))
     print(NOTE)
     if a.write:
         write_json(a.write, {"created_by": "scalp-scanner orb", "created_at": now.isoformat() + "Z",
@@ -542,7 +664,8 @@ def cmd_universe(a):
     write_json(a.universe, {"created_by": "scalp-scanner universe",
                             "created_at": parse_now(None).isoformat() + "Z", "coins": coins})
     print("Universo: %d criptos con más de %.0f M USD de volumen -> %s" % (len(coins), a.min_volume / 1e6, a.universe))
-    print("  " + ", ".join("%s (%s)" % (c["sym"], c["yahoo"]) for c in coins))
+    print("  " + ", ".join("%s (%s)" % (c["sym"], c.get("binance") or c["yahoo"]) for c in coins))
+    print("  En Binance: %d de %d. El resto se lee de Yahoo." % (sum(1 for c in coins if c.get("binance")), len(coins)))
     if missing:
         print("  Sin par en Yahoo, quedaron afuera: %s" % ", ".join(missing))
     if wrong:
@@ -559,6 +682,8 @@ def main(argv=None):
         p.add_argument("--symbols", help="comma list instead of the universe, e.g. BTC,ETH,SOL")
         p.add_argument("--limit", type=int, default=8)
         p.add_argument("--min-volume", type=float, default=1e9)
+        p.add_argument("--source", default="auto", choices=["auto", "binance", "yahoo"],
+                       help="where the candles come from: Binance first and Yahoo as a fallback (auto), or one")
         p.add_argument("--max-rank", type=int, default=100,
                        help="leave out coins below this market-cap rank (default 100; 0 = no limit)")
         p.add_argument("--now", help='pretend it is this UTC time, e.g. "2026-11-05 15:00"')
@@ -582,7 +707,8 @@ def main(argv=None):
     if not a.cmd:
         ap.print_help()
         return 1
-    global OFFLINE
+    global OFFLINE, SOURCE
+    SOURCE = a.source
     OFFLINE = getattr(a, "offline", None)
     if OFFLINE and not os.path.isdir(OFFLINE):
         print("scan.py: --offline wants a folder of saved charts, not %r" % OFFLINE, file=sys.stderr)

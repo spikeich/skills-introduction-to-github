@@ -179,8 +179,8 @@ La hora del bloque cuenta como la fecha del hecho. Necesita `mempool.space` y
 Aunque sea NUEVA, el precio puede haberse movido en los primeros minutos.
 `--dir -` (noticia mala para la cripto) o `--dir +` (buena), con `--coin`
 (BTC por defecto), mide cuánto se movió desde la primera nota contra lo normal
-para esas horas (velas de Yahoo de 5 minutos, o de 1 hora si pasaron más de 2
-días):
+para esas horas (velas de 5 minutos, o de 1 hora si pasaron más de 2 días; de
+Binance primero y de Yahoo si Binance no tiene la cripto):
 
 | se movió | veredicto | qué se hace |
 | --- | --- | --- |

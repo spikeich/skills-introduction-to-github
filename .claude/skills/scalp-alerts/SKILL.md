@@ -41,5 +41,9 @@ se llenó o salida por tiempo) o a la hora (`--max-hours`). Corrélo bajo
 Si el plan ya venció cuando arranca (su hora de salida pasó), lo dice y no
 vigila nada: hay que armar un plan nuevo.
 
+**Precios:** primero Binance (`data-api.binance.vision`, y `api.binance.com` donde no esté bloqueado): son los precios de la exchange misma. Si Binance no tiene la cripto o no responde, Yahoo (`query2.finance.yahoo.com` y `query1`). `--source binance` o `--source yahoo` fuerza una. La salida dice de dónde salieron ("Precios de Binance (BTCUSDT)"). Binance cotiza en USDT y suele quedar un 0,1 % arriba de Yahoo y CoinGecko, que cotizan en dólares: no mezcles fuentes dentro de una misma operación.
+
+`now --compare` muestra la misma cripto en Binance, Yahoo y CoinGecko, lado a lado.
+
 Yahoo puede ir uno o dos minutos atrás de Binance: en scalping eso es mucho.
 Para operar de verdad, mirá el precio en la app de la exchange.

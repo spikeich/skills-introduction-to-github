@@ -28,8 +28,7 @@ Otras opciones: `--session wallstreet|europa|utc` (con `--open HH:MM` para la
 libre), `--until`, `--hold`, `--confirm`, `--replays`, `--seed` (19), `--window`
 (2 minutos), `--offline`, `--now`. Con el plan de `/scalp-exit` no hace falta
 ninguna: lee la sesión, la apertura y la hora de salida del plan.
-Necesita `query2.finance.yahoo.com` (4 consultas: Yahoo da 7 días de velas de
-1 minuto por consulta y guarda unos 30).
+**Precios:** primero Binance (`data-api.binance.vision`, y `api.binance.com` donde no esté bloqueado): son los precios de la exchange misma. Si Binance no tiene la cripto o no responde, Yahoo (`query2.finance.yahoo.com` y `query1`). `--source binance` o `--source yahoo` fuerza una. La salida dice de dónde salieron ("Precios de Binance (BTCUSDT)"). Binance cotiza en USDT y suele quedar un 0,1 % arriba de Yahoo y CoinGecko, que cotizan en dólares: no mezcles fuentes dentro de una misma operación. Los 28 días de velas de 1 minuto se piden a Binance en paralelo (unos 12 segundos); Yahoo da 7 días por consulta y guarda unos 30.
 
 ## Cómo funciona
 

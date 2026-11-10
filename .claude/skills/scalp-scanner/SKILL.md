@@ -24,7 +24,10 @@ python3 "${CLAUDE_SKILL_DIR}/scan.py" orb --at 14:50 --write   # cortar el reloj
 python3 "${CLAUDE_SKILL_DIR}/scan.py" daily                    # contexto diario (tendencia, RSI)
 ```
 
-Necesita `api.coingecko.com` y `query2.finance.yahoo.com`.
+La lista de criptos sale de CoinGecko (`api.coingecko.com`). **Precios:** primero Binance (`data-api.binance.vision`, y `api.binance.com` donde no esté bloqueado): son los precios de la exchange misma. Si Binance no tiene la cripto o no responde, Yahoo (`query2.finance.yahoo.com` y `query1`). `--source binance` o `--source yahoo` fuerza una. La salida dice de dónde salieron ("Precios de Binance (BTCUSDT)"). Binance cotiza en USDT y suele quedar un 0,1 % arriba de Yahoo y CoinGecko, que cotizan en dólares: no mezcles fuentes dentro de una misma operación.
+
+Al armar la lista, el escáner anota para cada cripto su par de Binance, y lo comprueba con el precio de
+CoinGecko: un par dado de baja o de otra moneda queda sin Binance y se lee de Yahoo.
 
 ## Antes de empezar: primero `/scalp-social-info`
 
