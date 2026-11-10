@@ -35,3 +35,8 @@
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Python caches and the skills' working files
+__pycache__/
+*.pyc
+trader/
