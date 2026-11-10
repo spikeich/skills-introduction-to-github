@@ -31,7 +31,7 @@ MAKER, TAKER = 0.0002, 0.0005
 
 
 def now():
-    return dt.datetime.now(dt.UTC).strftime("%H:%M UTC")
+    return dt.datetime.now(dt.timezone.utc).strftime("%H:%M UTC")
 
 
 def say(msg):

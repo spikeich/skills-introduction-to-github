@@ -19,15 +19,17 @@ Run it under a monitor: each line is a notification.
 
 From a plan (crypto-exit's trader/plan.json):
   entry    the price reaches the entry (a limit order there would fill)
-  stop     touched AFTER the entry: the trade is out at a loss
-  target   touched AFTER the entry: the trade is out at the target
+  stop     touched in the entry's minute or later: the trade is out at a loss
+           (the price passes the entry before it can reach the stop)
+  target   touched in a LATER minute than the entry: out at the target (in the
+           entry's own minute it may have been there before the fill)
   flat_by  the plan's time to be out, win or lose
   A price that runs to the stop or the target before it ever reached the
   entry fires "missed": the limit order never filled, cancel it.
 
-Prices: Yahoo's 1-minute chart (query2.finance.yahoo.com), the last
-completed minute's high, low and close, so a wick between two polls still
-counts. Free and unofficial: it can lag a minute or two behind the exchange.
+Prices: Yahoo's 1-minute chart (query2.finance.yahoo.com): every completed
+minute's high, low and close, each judged once and in order, so a wick between
+two looks still counts and a look that fails is caught up by the next one. Free and unofficial: it can lag a minute or two behind the exchange.
 Exit codes: 0 when the watch ended on an alert, 1 otherwise.
 """
 
@@ -116,10 +118,30 @@ def minute_bars(sym, since_ts):
     return out
 
 
+def flat_at_of(plan):
+    """When the plan says to be out, as a naive UTC datetime (None when it does not say).
+    Uses the plan's full time (flat_at) when it has one; else its date and HH:MM, on the
+    next day when that is not after the entry time (a trade that crosses UTC midnight)."""
+    try:
+        if plan.get("flat_at"):
+            return datetime.datetime.strptime(plan["flat_at"], "%Y-%m-%d %H:%M")
+        if not plan.get("flat_by") or not plan.get("date"):
+            return None
+        h, mi = (int(x) for x in plan["flat_by"].split(":"))
+        t = datetime.datetime.combine(datetime.date.fromisoformat(plan["date"]), datetime.time(h, mi))
+        if plan.get("entry_time"):
+            eh, em = (int(x) for x in plan["entry_time"].split(":"))
+            if (h, mi) <= (eh, em):
+                t += datetime.timedelta(days=1)
+        return t
+    except (TypeError, ValueError):
+        raise AlertError("the plan's flat_by / flat_at is not a time: %r / %r" % (plan.get("flat_by"), plan.get("flat_at")))
+
+
 def plan_alerts(plan):
     return {"symbol": plan["symbol"], "side": plan["side"], "entry": plan["entry"], "stop": plan["stop"],
             "target": plan["target"], "date": plan.get("date"), "flat_by": plan.get("flat_by"),
-            "filled": False, "done": False}
+            "flat_at": flat_at_of(plan), "filled": False, "done": False}
 
 
 def step(state, bars):
@@ -147,7 +169,9 @@ def step(state, bars):
                 p["filled"] = True
                 msgs.append("ENTRADA %s: el precio llegó a %g (%s). Si tenías la orden límite, se llenó."
                             % (state["symbol"], p["entry"], stamp))
-                hit_stop = hit_tp = False   # same minute: judge from the next bar on
+                # The same minute: the price passes the entry before it can reach the stop, so a
+                # stop touched here came after the fill and counts. The target may have come first.
+                hit_tp = False
             elif hit_stop or hit_tp:
                 p["done"] = True
                 msgs.append("PERDIDA %s: tocó %s (%g) sin pasar por la entrada %g. La orden no se llenó: "
@@ -181,7 +205,8 @@ def cmd_watch(a):
     if not states:
         raise AlertError("nothing to watch: no %s and no --symbol with --above/--below" % a.plan)
     start = utc_now()
-    since = int(time.time()) - 120
+    for s in states.values():
+        s["since"] = int(time.time()) - 120      # each closed minute is judged once, in order
     desc = []
     for s in states.values():
         if s["plan"]:
@@ -192,11 +217,19 @@ def cmd_watch(a):
         for pa in s["price"]:
             desc.append("%s %s %g" % (s["symbol"], "arriba de" if pa["dir"] == "above" else "abajo de", pa["level"]))
     say("Vigilando: " + " | ".join(desc))
+    for s in states.values():
+        p = s["plan"]
+        if p and p["flat_at"] and start >= p["flat_at"]:
+            p["done"] = True
+            say("El plan de %s ya venció: había que estar afuera a las %s UTC del %s. Armá un plan nuevo."
+                % (s["symbol"], p["flat_by"] or p["flat_at"].strftime("%H:%M"), p["flat_at"].strftime("%d/%m")))
+    if not any((s["plan"] and not s["plan"]["done"]) or s["price"] for s in states.values()):
+        return 1
     last_beat, errors, fired_any = start, 0, False
     while utc_now() < start + datetime.timedelta(hours=a.max_hours):
         for s in states.values():
             try:
-                bars = minute_bars(s["symbol"], since)
+                bars = minute_bars(s["symbol"], s["since"])
                 errors = 0
             except AlertError as e:
                 errors += 1
@@ -209,19 +242,17 @@ def cmd_watch(a):
                 fired_any = True
             if bars:
                 s["last"] = bars[-1][3]
+                s["since"] = bars[-1][0] + 60     # a failed look loses nothing: the next one catches up
             time.sleep(1)
-        since = int(time.time()) - 120
         now = utc_now()
         for s in states.values():
             p = s["plan"]
-            if p and not p["done"] and p["flat_by"] and p["date"] == now.date().isoformat():
-                h, mi = (int(x) for x in p["flat_by"].split(":"))
-                if now.time() >= datetime.time(h, mi):
-                    p["done"] = True
-                    say("HORA DE SALIR %s: son las %s UTC. %s" % (
-                        s["symbol"], p["flat_by"], "Cerrá la posición, gane o pierda." if p["filled"]
-                        else "La entrada nunca se llenó: cancelá la orden."))
-                    fired_any = True
+            if p and not p["done"] and p["flat_at"] and now >= p["flat_at"]:
+                p["done"] = True
+                say("HORA DE SALIR %s: son las %s UTC. %s" % (
+                    s["symbol"], now.strftime("%H:%M"), "Cerrá la posición, gane o pierda." if p["filled"]
+                    else "La entrada nunca se llenó: cancelá la orden."))
+                fired_any = True
         active = [s for s in states.values() if (s["plan"] and not s["plan"]["done"])
                   or any(not pa["fired"] for pa in s["price"])]
         if not active:

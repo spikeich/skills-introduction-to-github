@@ -212,7 +212,8 @@ fuentes ni des una noticia por cierta sin pasar por `verify`.
 `news`:
 
 - **Comisiones** de Bitcoin ahora contra la mediana de los últimos 15
-  bloques: **normales**, **altas** (1,5 veces) o **muy altas** (3 veces). Muy
+  bloques: **normales**, **altas** (1,5 veces) o **muy altas** (3 veces). Por debajo de 5 sat/vB siempre son
+  normales: con bloques casi vacíos (mediana de 0,1) la proporción engaña. Muy
   altas quiere decir mucha gente apurada por mover BTC, como en las caídas
   fuertes (depósitos para vender) o en las subidas con euforia: esperá más
   volatilidad y achicá el tamaño.

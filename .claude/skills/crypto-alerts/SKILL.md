@@ -33,14 +33,22 @@ Necesita `query2.finance.yahoo.com` (y `query1`) en la red.
 | --- | --- |
 | **ALERTA** | el precio superó (`--above`) o perforó (`--below`) tu nivel |
 | **ENTRADA** | el precio llegó a la entrada del plan: una orden límite ahí se llenó |
-| **STOP** | tocó el stop después de la entrada |
-| **OBJETIVO** | tocó el objetivo después de la entrada |
+| **STOP** | tocó el stop en el minuto de la entrada o después: la operación salió con pérdida |
+| **OBJETIVO** | tocó el objetivo en un minuto posterior al de la entrada |
 | **PERDIDA** | tocó el stop o el objetivo sin pasar antes por la entrada: la orden no se llenó, cancelala |
 | **HORA DE SALIR** | llegó la hora de salida del plan: cerrá, gane o pierda (o cancelá si no entró) |
 
 Mira el máximo y el mínimo de cada minuto, no solo el último precio: una
-mecha entre dos consultas también cuenta. Si en el mismo minuto toca la
-entrada y el stop, lo juzga desde el minuto siguiente.
+mecha entre dos consultas también cuenta. Cada minuto cerrado se juzga **una
+sola vez y en orden**, y si una consulta falla, la siguiente se pone al día.
+
+Si en el mismo minuto toca la entrada y el stop, **cuenta el stop**: el precio
+pasa por la entrada antes de poder llegar al stop. Si en ese minuto toca la
+entrada y el objetivo, el objetivo espera al minuto siguiente, porque pudo
+haber estado ahí antes de que se llenara la orden.
+
+Si el plan ya venció cuando arranca (su hora de salida pasó), lo dice y no
+vigila nada.
 
 ## Cómo correrlo
 

@@ -39,7 +39,10 @@ python3 "${CLAUDE_SKILL_DIR}/timemachine.py" run --symbol XRP --side sell \
 Otras opciones: `--date YYYY-MM-DD` (por defecto hoy, UTC), `--session`
 (ver abajo), `--until 18:00`, `--replays N`, `--seed N` (por defecto 19),
 `--window N` (por defecto 2 velas), `--write`, `--json`, `--offline ARCHIVO`,
-`--now "2026-11-05 14:00"`.
+`--now "2026-11-05 14:00"`. Con el plan dado por opciones (`--symbol ...`),
+`--confirm N` dice cuántas velas seguidas espera la regla de la historia: por
+defecto 3 en Wall Street y 1 en lo demás, igual que `/crypto-entry`. Con
+`trader/plan.json` lo lee del plan.
 
 Necesita `query2.finance.yahoo.com` (y `query1` de respaldo) en la red del
 entorno.

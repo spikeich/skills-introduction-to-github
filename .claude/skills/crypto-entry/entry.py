@@ -14,9 +14,9 @@ London and Wall Street opens, 24/7.
 
 Confirmation (--confirm N): the trigger needs N 5-minute closes IN A ROW outside the
 range (or the level); the entry is the Nth close. Default 3 for an opening-range break
-on Wall Street, 1 otherwise. Tested over 59 days and 8 coins: on Wall Street, 1 candle
-lost -0.12 R a trade, 2 candles -0.02 R, 3 candles about break-even; the London open lost
-with 1, 2 and 3. Break-even is not an edge: it filters false breaks, it does not make money.
+on Wall Street, 1 otherwise. Tested over 60 days and 8 coins (research/ at the repo root): on Wall Street,
+1 candle lost -0.12 to -0.15 R a trade, 2 or 3 candles about -0.02 R, close to break-even; the
+London open lost with 1, 2 and 3. Break-even is not an edge: it filters false breaks, it does not make money.
 
 Setups:
   orb    opening-range break. The range is the high and low of the first

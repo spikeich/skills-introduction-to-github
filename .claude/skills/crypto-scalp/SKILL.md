@@ -77,6 +77,13 @@ Para intradía, `days=1` da precios cada ~5 minutos y `days=2` por hora.
 
 ## 2. Corto o largo, y dónde
 
+**Estas son reglas a ojo: son las únicas del repo que nunca se midieron con
+datos.** El sesgo que imprime `scan.py` (corto en rebotes, largo en caídas)
+tampoco. Usalas como punto de partida para pensar, decíselo al usuario, y
+pasá siempre el plan por `/crypto-timemachine` y `/crypto-risk` antes de
+simularlo. Para scalping de verdad, con velas de 1 minuto, está el repo
+hermano [scalp-trading-crypto-jeto1337](https://github.com/spikeich/scalp-trading-crypto-jeto1337).
+
 - **Nunca entrar en el mínimo del día para un corto, ni en el máximo para un
   largo.** Esperar un rebote o una caída del 1-1,5 % y poner la orden límite
   ahí.

@@ -47,6 +47,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -81,6 +82,17 @@ LABEL = {
     "overbought": ("corto", "sobrecompra, RSI 14 > 70"),
     "oversold_bounce": ("largo", "rebote desde sobreventa"),
 }
+
+
+# Yahoo lists some coins under a numbered pair (the plain ticker is another coin, or nothing).
+YAHOO_PAIRS = {"HYPE": "HYPE32196-USD", "UNI": "UNI7083-USD", "SUI": "SUI20947-USD",
+               "PEPE": "PEPE24478-USD", "TRUMP": "TRUMP35336-USD"}
+# When CoinGecko does not answer and no universe is saved: the largest coins, so a scan still runs.
+DEFAULT_COINS = ("BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA", "LINK", "LTC", "BCH", "AVAX", "TRX")
+PRICE_BAND = (0.5, 2.0)     # Yahoo's last close over CoinGecko's price: outside this, it is another coin
+STALE_HOURS = 24            # a saved universe older than this gets a warning
+OFFLINE = None              # a folder of saved Yahoo charts (<PAIR>.json) instead of the network
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 class ScanError(Exception):
@@ -203,8 +215,15 @@ def spark(symbols, rng, interval):
 
 
 def chart(sym, rng="2d", interval="5m"):
-    q = urllib.parse.urlencode({"range": rng, "interval": interval})
-    doc = yahoo("/v8/finance/chart/%s?%s" % (urllib.parse.quote(sym), q)) or {}
+    if OFFLINE:
+        path = os.path.join(OFFLINE, sym + ".json")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    else:
+        q = urllib.parse.urlencode({"range": rng, "interval": interval})
+        doc = yahoo("/v8/finance/chart/%s?%s" % (urllib.parse.quote(sym), q)) or {}
     res = ((doc.get("chart") or {}).get("result") or [None])[0]
     if not res:
         return []
@@ -220,7 +239,17 @@ def chart(sym, rng="2d", interval="5m"):
 
 # ---------------------------------------------------------------- universe
 
-def build_universe(limit, min_volume):
+def same_coin(price, closes):
+    """Is this Yahoo series the coin CoinGecko means? Tickers repeat, so compare the prices."""
+    last = next((x for x in reversed(closes or []) if x), None)
+    if not last or not price:
+        return False
+    return PRICE_BAND[0] <= last / price <= PRICE_BAND[1]
+
+
+def build_universe(limit, min_volume, max_rank=100):
+    """-> (coins, missing, wrong): the most traded coins matched to their Yahoo pair, the ones
+    Yahoo does not have, and the ones whose ticker on Yahoo is a different coin."""
     coins = None
     for attempt in range(5):
         try:
@@ -236,27 +265,31 @@ def build_universe(limit, min_volume):
     picked = []
     for c in coins:
         s = (c.get("symbol") or "").lower()
+        rank = c.get("market_cap_rank")
         if s in SKIP or "usd" in s or (c.get("total_volume") or 0) < min_volume:
             continue
+        if max_rank and (rank is None or rank > max_rank):
+            continue      # traded a lot today, but a small coin: mostly one-day speculation
         picked.append({"sym": s.upper(), "name": c.get("name"), "volume": c.get("total_volume"),
-                       "rank": c.get("market_cap_rank"), "yahoo": s.upper() + "-USD"})
+                       "rank": rank, "price": c.get("current_price"), "yahoo": s.upper() + "-USD"})
         if len(picked) >= limit:
             break
     have = spark([p["yahoo"] for p in picked], "5d", "1d")
-    missing = []
+    missing, wrong = [], []
     for p in picked:
-        if p["yahoo"] in have:
+        if p["yahoo"] in have and same_coin(p["price"], have[p["yahoo"]][1]):
             continue
+        clash = p["yahoo"] in have      # Yahoo has that ticker, but its price says it is another coin
         found = None
         try:
             q = urllib.parse.urlencode({"q": p["name"], "quotesCount": 6, "newsCount": 0})
             doc = yahoo("/v1/finance/search?" + q) or {}
-            for row in doc.get("quotes", []):
-                sym = row.get("symbol") or ""
-                if row.get("quoteType") == "CRYPTOCURRENCY" and sym.endswith("-USD") \
-                        and sym.startswith(p["sym"]):
-                    found = sym
-                    break
+            cands = [row.get("symbol") for row in doc.get("quotes", [])
+                     if row.get("quoteType") == "CRYPTOCURRENCY" and row.get("symbol") != p["yahoo"]
+                     and re.fullmatch(re.escape(p["sym"]) + r"\d*-USD", row.get("symbol") or "")]
+            if cands:
+                got = spark(cands[:3], "5d", "1d")
+                found = next((y for y in cands[:3] if y in got and same_coin(p["price"], got[y][1])), None)
         except ScanError:
             pass
         time.sleep(PAUSE)
@@ -264,18 +297,45 @@ def build_universe(limit, min_volume):
             p["yahoo"] = found
         else:
             p["yahoo"] = None
-            missing.append(p["sym"])
-    return [p for p in picked if p["yahoo"]], missing
+            (wrong if clash else missing).append(p["sym"])
+    return [p for p in picked if p["yahoo"]], missing, wrong
 
 
 def load_universe(path, a):
-    if a.symbols:
-        return [{"sym": s.strip().upper().split("-")[0], "yahoo": s.strip().upper()
-                 if "-" in s else s.strip().upper() + "-USD", "volume": 0}
-                for s in a.symbols.split(",") if s.strip()]
+    known = {}
     if os.path.exists(path):
-        return json.load(open(path, encoding="utf-8"))["coins"]
-    coins, _ = build_universe(a.limit, a.min_volume)
+        with open(path, encoding="utf-8") as fh:
+            saved = json.load(fh)
+        known = {c["sym"]: c["yahoo"] for c in saved.get("coins", [])}
+    if a.symbols:
+        out = []
+        for s in a.symbols.split(","):
+            s = s.strip().upper()
+            if s:
+                base = s[:-4] if s.endswith("-USD") else s
+                pair = s if "-" in s else known.get(base) or YAHOO_PAIRS.get(base, base + "-USD")
+                out.append({"sym": base, "yahoo": pair, "volume": 0})
+        return out
+    if OFFLINE:         # no list given: the coins that have a saved chart
+        return [{"sym": f[:-5].split("-")[0], "yahoo": f[:-5], "volume": 0}
+                for f in sorted(os.listdir(OFFLINE)) if f.endswith(".json")]
+    if known:
+        try:
+            made = datetime.datetime.fromisoformat(saved["created_at"].replace("Z", ""))
+            if parse_now(getattr(a, "now", None)) - made > datetime.timedelta(hours=STALE_HOURS):
+                print("  OJO: la lista de criptos de %s es del %s. Actualizala con: scan.py universe"
+                      % (path, made.strftime("%d/%m %H:%M UTC")))
+        except (KeyError, ValueError, AttributeError):
+            pass
+        return saved["coins"]
+    try:
+        coins, _, _ = build_universe(a.limit, a.min_volume, a.max_rank)
+    except ScanError as e:
+        print("  OJO: no pude armar la lista de criptos (%s). Uso la lista fija de las más grandes." % e)
+        return [{"sym": s, "yahoo": YAHOO_PAIRS.get(s, s + "-USD"), "volume": 0} for s in DEFAULT_COINS]
+    if coins:           # keep it: the next scan of the day reads the same list
+        write_json(path, {"created_by": os.path.basename(HERE) + " universe",
+                          "created_at": parse_now(None).isoformat() + "Z", "coins": coins})
     return coins
 
 
@@ -424,7 +484,8 @@ def cmd_orb(a):
                 bars = chart(c["yahoo"])
             except ScanError:
                 bars = []
-        time.sleep(CHART_PAUSE)
+        if not OFFLINE:
+            time.sleep(CHART_PAUSE)
         r = orb_scan(bars, day, open_min, cutoff, n)
         if r is None:
             unusable.append(c["sym"])
@@ -468,13 +529,15 @@ def cmd_orb(a):
 
 
 def cmd_universe(a):
-    coins, missing = build_universe(a.limit, a.min_volume)
+    coins, missing, wrong = build_universe(a.limit, a.min_volume, a.max_rank)
     write_json(a.universe, {"created_by": "crypto-scanner universe",
                             "created_at": parse_now(None).isoformat() + "Z", "coins": coins})
     print("Universo: %d criptos con más de %.0f M USD de volumen -> %s" % (len(coins), a.min_volume / 1e6, a.universe))
     print("  " + ", ".join("%s (%s)" % (c["sym"], c["yahoo"]) for c in coins))
     if missing:
         print("  Sin par en Yahoo, quedaron afuera: %s" % ", ".join(missing))
+    if wrong:
+        print("  En Yahoo ese símbolo es otra moneda (el precio no coincide), quedaron afuera: %s" % ", ".join(wrong))
     return 0 if coins else 1
 
 
@@ -487,6 +550,8 @@ def main(argv=None):
         p.add_argument("--symbols", help="comma list instead of the universe, e.g. BTC,ETH,SOL")
         p.add_argument("--limit", type=int, default=30)
         p.add_argument("--min-volume", type=float, default=100e6)
+        p.add_argument("--max-rank", type=int, default=100,
+                       help="leave out coins below this market-cap rank (default 100; 0 = no limit)")
         p.add_argument("--now", help='pretend it is this UTC time, e.g. "2026-11-05 15:00"')
 
     p = sub.add_parser("universe", help="top coins by volume, matched to Yahoo")
@@ -501,9 +566,15 @@ def main(argv=None):
     p.add_argument("--at", help="cut the clock at this UTC time, e.g. 15:30")
     p.add_argument("--min-beyond", type=float, default=0.1, help="%% past the range below which a break is weak")
     p.add_argument("--write", nargs="?", const="trader/orb.json")
+    p.add_argument("--offline", help="a folder of saved Yahoo charts (<PAIR>.json) instead of the network")
     a = ap.parse_args(argv)
     if not a.cmd:
         ap.print_help()
+        return 1
+    global OFFLINE
+    OFFLINE = getattr(a, "offline", None)
+    if OFFLINE and not os.path.isdir(OFFLINE):
+        print("scan.py: --offline wants a folder of saved charts, not %r" % OFFLINE, file=sys.stderr)
         return 1
     try:
         return {"universe": cmd_universe, "daily": cmd_daily, "orb": cmd_orb}[a.cmd](a)

@@ -211,9 +211,15 @@ def cmd_check(a):
     return 0 if res["pass"] else 1
 
 
+def clock(a):
+    if not getattr(a, "now", None):
+        return utc_now()
+    return datetime.datetime.fromisoformat(a.now.replace("Z", ""))
+
+
 def cmd_log(a):
     j = journal(a.journal)
-    now = utc_now()
+    now = clock(a)
     sym = a.symbol.upper()
     sym = sym if "-" in sym else sym + "-USD"
     for t in reversed(j["trades"]):
@@ -230,7 +236,7 @@ def cmd_log(a):
 
 
 def cmd_today(a):
-    now = utc_now()
+    now = clock(a)
     lim = limits(a.config)
     st = day_stats(journal(a.journal), now.date().isoformat())
     print("Hoy (%s UTC): %d de %d operaciones, %d de %d perdidas, %+.2f USD, %d abiertas."
@@ -264,7 +270,9 @@ def main(argv=None):
     p = sub.add_parser("log", help="record a closed trade's result in USD")
     p.add_argument("--symbol", required=True)
     p.add_argument("--result", type=float, required=True)
-    sub.add_parser("today", help="the day so far")
+    p.add_argument("--now", help="pretend it is this UTC time")
+    p = sub.add_parser("today", help="the day so far")
+    p.add_argument("--now", help="pretend it is this UTC time")
     sub.add_parser("config", help="the limits in force")
     a = ap.parse_args(argv)
     if not a.cmd:

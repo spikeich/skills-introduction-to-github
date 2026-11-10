@@ -608,7 +608,9 @@ def load_plan(a, now_utc):
         raw = {"symbol": a.symbol, "side": a.side, "date": a.date or to_eastern(now_utc).date().isoformat(),
                "entry": a.entry, "stop": a.stop, "target": a.target, "entry_time": a.entry_time,
                "setup": a.setup, "opening_range": {"minutes": a.or_minutes}, "stop_rule": a.stop_rule,
-               "interval": "5m"}
+               "interval": "5m",
+               # the closes in a row the history's rule waits for: crypto-entry's own default
+               "confirm": a.confirm or (3 if a.setup == "orb" and SESSION_NAME == "wallstreet" else 1)}
         src = "flags"
     else:
         if not os.path.exists(a.plan):
@@ -1030,6 +1032,9 @@ def main(argv=None):
         p.add_argument("--entry-time", help="the entry bar's close, UTC, e.g. 14:00")
         p.add_argument("--setup", default="orb")
         p.add_argument("--or-minutes", type=int, default=15)
+        p.add_argument("--confirm", type=int,
+                       help="with --symbol: closes in a row the history's rule waits for (default: 3 for an "
+                            "orb on wallstreet, 1 otherwise, as in crypto-entry)")
         p.add_argument("--stop-rule", default="auto", choices=["auto", "or_mid", "or_low", "or_high", "pct"])
         p.add_argument("--replays", type=int, default=10000)
         p.add_argument("--seed", type=int, default=19)

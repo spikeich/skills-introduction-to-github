@@ -53,11 +53,25 @@ grande del día). Lo que encuentres manda sobre lo que diga el gráfico:
 ## Los tres comandos
 
 **`universe`.** Toma de CoinGecko las criptos con más volumen en 24 h. Saca
-las stablecoins, las copias envueltas o en staking y el oro tokenizado, y las
-que mueven menos de 100 M USD. A cada una le busca su par en Yahoo: casi
-siempre es `SIM-USD`, pero algunas tienen un número (HYPE es `HYPE32196-USD`,
-SUI es `SUI20947-USD`), y el escáner lo resuelve solo. Si `trader/universe.json`
-no existe, `orb` y `daily` lo arman.
+las stablecoins, las copias envueltas o en staking y el oro tokenizado, las
+que mueven menos de 100 M USD (`--min-volume`) y las que están **fuera de las
+100 de mayor capitalización** (`--max-rank`; `0` lo apaga): una moneda chica
+con mucho volumen un día suele ser pura especulación.
+
+A cada una le busca su par en Yahoo: casi siempre es `SIM-USD`, pero algunas
+tienen un número (HYPE es `HYPE32196-USD`, SUI es `SUI20947-USD`). El escáner
+lo resuelve solo y **compara el precio de Yahoo con el de CoinGecko**: los
+símbolos se repiten entre monedas, y si el precio no coincide es otra moneda
+(pasó con ARB, que en Yahoo es `ARB11841-USD`). Las que no tienen par, o lo
+tienen de otra moneda, quedan afuera y se avisa.
+
+Si `trader/universe.json` no existe, `orb` y `daily` lo arman **y lo guardan**,
+así todos los escaneos del día usan la misma lista. Si tiene más de un día,
+avisa que hay que actualizarlo con `universe`. Si CoinGecko no responde y no
+hay lista guardada, usa una lista fija de las 12 más grandes y lo dice.
+
+`orb --offline CARPETA` lee gráficos guardados (`<PAR>.json`) en vez de la
+red: lo usan los tests.
 
 **`orb` (ruptura del rango de apertura).** El rango es el máximo y el mínimo
 de los primeros `--or-minutes` (15) de la sesión. Una ruptura es la primera

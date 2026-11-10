@@ -60,9 +60,10 @@ grande del día). Lo que encuentres manda sobre lo que diga el gráfico:
   20 días que marcó `/crypto-scanner daily`.
 - **Confirmación (`--confirm N`).** Hacen falta N velas **seguidas** cerrando
   afuera del rango (o del nivel); la entrada es el cierre de la última. **Por
-  defecto son 3 en la apertura de Wall Street** y 1 en lo demás. Probado en 59
-  días y 8 criptos: en Wall Street, con 1 vela se perdía −0,12 R por operación,
-  con 2 −0,02 R y con 3 quedaba casi en empate, porque filtra las rupturas
+  defecto son 3 en la apertura de Wall Street** y 1 en lo demás. Probado en 60
+  días y 8 criptos (`research/` en la raíz del repo): en Wall Street, con 1
+  vela se perdía entre −0,12 y −0,15 R por operación, y con 2 o con 3 unos
+  −0,02 R, casi en empate, porque filtra las rupturas
   falsas. Empatar no es ganar: la confirmación evita pérdidas, no crea una
   ventaja. Mientras espera, muestra "2 de 3 velas seguidas".
 - **La apertura de Europa** perdió con 1, 2 y 3 velas en esa misma prueba: la
