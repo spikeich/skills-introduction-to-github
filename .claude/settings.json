@@ -1,0 +1,19 @@
+{
+  "extraKnownMarketplaces": {
+    "session-lens": {
+      "source": {
+        "source": "github",
+        "repo": "neokn/session-lens"
+      }
+    },
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "session-lens@session-lens": true
+  }
+}
