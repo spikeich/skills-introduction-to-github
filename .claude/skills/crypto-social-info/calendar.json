@@ -1,0 +1,50 @@
+{
+ "note": "Próximos eventos programados. time_utc en UTC (Argentina = UTC-3). history_type: el tipo del historial con el que comparar (vacío si no hay casos). Mantenelo al día buscando en fuentes oficiales.",
+ "events": [
+  {
+   "date": "2026-11-10",
+   "time_utc": "13:30",
+   "country": "EE.UU.",
+   "title": "Inflación (CPI) de octubre",
+   "type": "dato_macro",
+   "history_type": null,
+   "src": "bls.gov/schedule/news_release/cpi.htm"
+  },
+  {
+   "date": "2026-12-09",
+   "time_utc": "19:00",
+   "country": "EE.UU.",
+   "title": "Decisión de tasas de la Fed (reunión 8 y 9/12, con proyecciones)",
+   "type": "tasas",
+   "history_type": null,
+   "src": "federalreserve.gov/newsevents/2026-december.htm"
+  },
+  {
+   "date": "2026-12-10",
+   "time_utc": "13:30",
+   "country": "EE.UU.",
+   "title": "Inflación (CPI) de noviembre",
+   "type": "dato_macro",
+   "history_type": null,
+   "src": "bls.gov/schedule/news_release/cpi.htm"
+  },
+  {
+   "date": "2027-01-03",
+   "time_utc": "",
+   "country": "EE.UU.",
+   "title": "Asume el Congreso nuevo, con mayoría demócrata en las dos cámaras",
+   "type": "cambio_gobierno",
+   "history_type": null,
+   "src": "CNBC 4/11/2026, FXStreet 6/11/2026"
+  },
+  {
+   "date": "2027-01-13",
+   "time_utc": "13:30",
+   "country": "EE.UU.",
+   "title": "Inflación (CPI) de diciembre",
+   "type": "dato_macro",
+   "history_type": null,
+   "src": "bls.gov/schedule/news_release/cpi.htm"
+  }
+ ]
+}

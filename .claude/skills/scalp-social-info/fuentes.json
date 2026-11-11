@@ -1,0 +1,47 @@
+{
+ "note": "Fuentes confiables por país. 'independientes' cuentan como confirmación. 'estatales' son medios controlados por un gobierno: cuentan como la voz oficial de ese gobierno (igual que un vocero), y una noticia nunca queda verificada solo con voces oficiales: hacen falta al menos 2 medios independientes. 'agencias' marca las agencias internacionales que exige la regla de alto impacto. Los medios cripto, los blogs y las redes no cuentan. Editá la lista a tu criterio.",
+ "regiones": {
+  "América": ["EE.UU.", "Brasil", "Argentina", "México", "Canadá"],
+  "Europa": ["Reino Unido", "Alemania", "Francia", "España", "Italia", "Rusia", "Ucrania", "Suiza"],
+  "Asia y Oceanía": ["Japón", "Corea del Sur", "China y Hong Kong", "India", "Pakistán", "Vietnam", "Indonesia", "Singapur", "Australia"],
+  "Medio Oriente": ["Emiratos", "Qatar", "Turquía"],
+  "África": ["Nigeria", "Sudáfrica"]
+ },
+ "agencias": ["Reuters", "Associated Press", "AP", "AFP", "Bloomberg", "dpa", "Kyodo", "Yonhap", "EFE", "ANSA", "Interfax", "Dow Jones"],
+ "por_pais": {
+  "EE.UU.": {"independientes": ["Associated Press", "AP", "Bloomberg", "Dow Jones", "The Wall Street Journal", "WSJ", "The New York Times", "The Washington Post", "CNBC", "CNN", "NPR", "NBC News", "CBS News", "Politico", "Axios", "Barron's", "Forbes", "Fortune", "MarketWatch", "Business Insider", "Yahoo Finance"], "estatales": []},
+  "Reino Unido": {"independientes": ["Reuters", "Financial Times", "BBC", "The Guardian", "The Times", "The Economist", "The Telegraph", "Sky News"], "estatales": []},
+  "Alemania": {"independientes": ["Handelsblatt", "Frankfurter Allgemeine", "FAZ", "Der Spiegel", "Süddeutsche Zeitung", "Die Zeit", "dpa", "Deutsche Welle", "DW"], "estatales": []},
+  "Francia": {"independientes": ["Le Monde", "Les Echos", "AFP", "Le Figaro", "Libération", "France 24"], "estatales": []},
+  "España": {"independientes": ["El País", "El Mundo", "Expansión", "EFE"], "estatales": []},
+  "Italia": {"independientes": ["Corriere della Sera", "Il Sole 24 Ore", "ANSA"], "estatales": []},
+  "Rusia": {"independientes": ["Interfax", "Kommersant", "Meduza", "Vedomosti"], "estatales": ["TASS", "RIA Novosti", "RT", "Rossiyskaya Gazeta"]},
+  "Ucrania": {"independientes": ["Kyiv Independent", "Ukrainska Pravda", "Kyiv Post", "Interfax-Ukraine"], "estatales": ["Ukrinform"]},
+  "Pakistán": {"independientes": ["Dawn", "The Express Tribune", "Business Recorder", "Geo News", "The News International"], "estatales": ["APP", "Associated Press of Pakistan", "PTV"]},
+  "Vietnam": {"independientes": ["VnExpress International", "VnExpress", "Tuoi Tre"], "estatales": ["VNA", "Vietnam News Agency", "Vietnam News", "Nhan Dan"]},
+  "Brasil": {"independientes": ["Folha de S.Paulo", "Folha", "O Globo", "Valor Econômico", "Estadão", "InfoMoney", "Exame"], "estatales": ["Agência Brasil"]},
+  "Nigeria": {"independientes": ["Premium Times", "Punch", "BusinessDay", "The Guardian Nigeria", "Channels TV", "Nairametrics"], "estatales": ["NAN", "News Agency of Nigeria"]},
+  "Indonesia": {"independientes": ["Kompas", "Tempo", "The Jakarta Post", "Bisnis Indonesia", "CNBC Indonesia"], "estatales": ["Antara"]},
+  "Corea del Sur": {"independientes": ["Yonhap", "Korea Herald", "The Korea Times", "Chosun Ilbo", "JoongAng Daily", "Maeil Business", "Korea JoongAng Daily"], "estatales": []},
+  "Japón": {"independientes": ["Nikkei", "Nikkei Asia", "Kyodo", "Asahi", "Asahi Shimbun", "Yomiuri", "NHK", "The Japan Times", "Mainichi"], "estatales": []},
+  "India": {"independientes": ["The Times of India", "The Hindu", "Hindustan Times", "The Economic Times", "Mint", "Business Standard", "NDTV", "The Indian Express"], "estatales": ["PTI"]},
+  "China y Hong Kong": {"independientes": ["South China Morning Post", "SCMP", "Caixin"], "estatales": ["Xinhua", "China Daily", "Global Times", "CCTV", "People's Daily"]},
+  "Singapur": {"independientes": ["The Straits Times", "The Business Times"], "estatales": []},
+  "Australia": {"independientes": ["The Sydney Morning Herald", "Australian Financial Review", "ABC News"], "estatales": []},
+  "Argentina": {"independientes": ["Clarín", "La Nación", "Infobae", "Ámbito", "El Cronista", "Bloomberg Línea"], "estatales": ["Télam"]},
+  "México": {"independientes": ["El Universal", "Reforma", "El Financiero", "El Economista"], "estatales": []},
+  "Canadá": {"independientes": ["The Globe and Mail", "CBC"], "estatales": []},
+  "Emiratos": {"independientes": ["The National", "Gulf News", "Khaleej Times"], "estatales": ["WAM"]},
+  "Qatar": {"independientes": ["Al Jazeera"], "estatales": []},
+  "Turquía": {"independientes": ["Hürriyet Daily News", "Daily Sabah"], "estatales": ["Anadolu"]},
+  "Sudáfrica": {"independientes": ["News24", "Business Day", "Mail & Guardian"], "estatales": []},
+  "Suiza": {"independientes": ["Neue Zürcher Zeitung", "NZZ"], "estatales": []}
+ },
+ "no_cuentan": ["CoinDesk", "The Block", "Decrypt", "Cointelegraph", "crypto.news", "CryptoSlate", "Bitcoin Magazine", "FXStreet", "Analytics Insight", "U.Today", "Benzinga", "Bitcoin.com", "blogs", "foros", "Telegram", "YouTube", "TikTok"],
+ "x_tildes": {
+  "gris": "gobiernos, organismos y funcionarios: sirve como origen, no como confirmación",
+  "dorado": "organizaciones verificadas (medios, empresas): sirve como origen, no como confirmación",
+  "azul": "tilde pago, cualquiera lo compra: se descarta",
+  "ninguno": "cuenta sin verificar: se descarta"
+ }
+}
