@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agentring": {
+      "type": "http",
+      "url": "https://agentring.io/mcp"
+    }
+  }
+}
